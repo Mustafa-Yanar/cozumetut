@@ -139,11 +139,12 @@ function SlotGrid({ grid, teacher, weekKey, session, students, onBook, onCancel 
     ).slice(0, 20);
   }, [students, searchQ]);
 
-  const handleCellClick = (dayIndex, slotIdx, slotData) => {
-    if (slotData.disabled || slotData.booked) return;
+  const handleCellClick = (dayIndex, slotIdx, slotData, isForceOpen = false) => {
+    if (slotData.booked) return;
+    if (slotData.disabled && !isForceOpen) return;
     const slot = slotsForDay(dayIndex)[slotIdx];
     const day = ALL_DAYS.find(d => d.index === dayIndex);
-    setBookingSlot({ dayIndex, slotIdx, slotId: slot.id, slotLabel: slot.label, dayLabel: day.label });
+    setBookingSlot({ dayIndex, slotIdx, slotId: slot.id, slotLabel: slot.label, dayLabel: day.label, forceOpen: isForceOpen });
     setSearchQ('');
     setSelectedStudent(null);
   };
@@ -152,7 +153,7 @@ function SlotGrid({ grid, teacher, weekKey, session, students, onBook, onCancel 
     if (!bookingSlot) return;
     let studentId = session.role === 'student' ? session.id : selectedStudent?.id;
     if (!studentId) return;
-    await onBook({ teacherId: teacher.id, day: bookingSlot.dayIndex, slotId: bookingSlot.slotId, studentId, weekKey });
+    await onBook({ teacherId: teacher.id, day: bookingSlot.dayIndex, slotId: bookingSlot.slotId, studentId, weekKey, forceOpen: bookingSlot.forceOpen });
     setBookingSlot(null);
   };
 
@@ -206,6 +207,11 @@ function SlotGrid({ grid, teacher, weekKey, session, students, onBook, onCancel 
 
       {bookingSlot && (
         <Modal title={`Rezervasyon: ${bookingSlot.dayLabel} ${bookingSlot.slotLabel}`} onClose={() => setBookingSlot(null)}>
+          {bookingSlot.forceOpen && (
+            <div className="mb-4 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">
+              Bu saat şablonda kapalıdır. Yalnızca bu hafta için açılıp rezerve edilecek — şablon değişmez.
+            </div>
+          )}
           {session.role === 'student' ? (
             <div>
               <p className="text-sm text-gray-600 mb-4"><strong>{teacher.name}</strong> – {teacher.branch} dersine kayıt oluyorsunuz.</p>
@@ -246,6 +252,7 @@ function SlotGrid({ grid, teacher, weekKey, session, students, onBook, onCancel 
 
 function SlotCell({ slotData, slot, dayIndex, slotIdx, session, teacher, onCellClick, onCancel, weekKey, mezunForbidden }) {
   const isForbidden = session.role === 'student' && session.group === 'mezun' && mezunForbidden && slot.id === mezunForbidden;
+  const isDirector = session.role === 'director';
 
   if (isForbidden) {
     return (
@@ -256,6 +263,20 @@ function SlotCell({ slotData, slot, dayIndex, slotIdx, session, teacher, onCellC
   }
 
   if (slotData.disabled) {
+    // Müdür: kapalı slotu bu hafta için açıp rezerve edebilir
+    if (isDirector) {
+      return (
+        <td className="py-1 px-1">
+          <button
+            onClick={() => onCellClick(dayIndex, slotIdx, slotData, true)}
+            title="Ek slot aç ve rezervasyon yap"
+            className="w-full rounded-lg py-2 px-1 text-center border border-dashed border-amber-200 hover:border-amber-400 hover:bg-amber-50 transition-colors text-xs text-amber-200 hover:text-amber-500"
+          >
+            +
+          </button>
+        </td>
+      );
+    }
     return (
       <td className="py-1 px-1">
         <div className="rounded-lg py-2 px-1 text-center text-xs text-gray-200 bg-gray-50 border border-gray-100 select-none">✕</div>
@@ -264,7 +285,7 @@ function SlotCell({ slotData, slot, dayIndex, slotIdx, session, teacher, onCellC
   }
 
   if (slotData.booked) {
-    const canCancel = session.role === 'director' ||
+    const canCancel = isDirector ||
       (session.role === 'teacher' && teacher.id === session.id) ||
       (session.role === 'student' && slotData.studentId === session.id);
     return (
@@ -274,7 +295,7 @@ function SlotCell({ slotData, slot, dayIndex, slotIdx, session, teacher, onCellC
           <div className="text-[10px] text-indigo-400">{slotData.studentCls}</div>
           {canCancel && (
             <button onClick={() => onCancel({ teacherId: teacher.id, day: dayIndex, slotId: slot.id, weekKey })}
-              className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-100">
+              className={`absolute top-0.5 right-0.5 p-0.5 rounded hover:bg-red-100 transition-opacity ${isDirector ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
               <X size={10} className="text-red-400" />
             </button>
           )}

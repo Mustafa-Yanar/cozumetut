@@ -51,7 +51,7 @@ export async function POST(req) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Giriş gerekli' }, { status: 401 });
 
-  const { teacherId, day, slotId, studentId, weekKey: wk } = await req.json();
+  const { teacherId, day, slotId, studentId, weekKey: wk, forceOpen } = await req.json();
   const weekKey = wk || getWeekKey();
 
   const teacher = await redis.get(`teacher:${teacherId}`);
@@ -61,7 +61,10 @@ export async function POST(req) {
   const key = slotKey(weekKey, teacherId, day, slotId);
   const existing = await redis.get(key);
   if (existing && existing.disabled) {
-    return NextResponse.json({ error: 'Bu saat dilimi kapalıdır' }, { status: 400 });
+    // Müdür forceOpen ile kapalı slotu bu hafta için açıp rezerve edebilir
+    if (!forceOpen || session.role !== 'director') {
+      return NextResponse.json({ error: 'Bu saat dilimi kapalıdır' }, { status: 400 });
+    }
   }
   if (existing && existing.booked) {
     return NextResponse.json({ error: 'Bu saat dilimi zaten dolu' }, { status: 400 });
