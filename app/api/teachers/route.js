@@ -32,17 +32,20 @@ export async function POST(req) {
     return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
   }
 
-  const { name, username, password, branch, allowedGroups } = await req.json();
-  if (!name || !username || !password || !branch) {
+  const { name, password, branch, allowedGroups } = await req.json();
+  if (!name || !password || !branch) {
     return NextResponse.json({ error: 'Tüm alanlar gerekli' }, { status: 400 });
   }
 
-  // Check username uniqueness
+  // İsim soyisim kullanıcı adı olarak kullanılır
+  const username = name;
+
+  // Aynı isimde öğretmen var mı kontrol et
   const teacherIds = await redis.smembers('teachers');
   for (const tid of teacherIds) {
     const t = await redis.get(`teacher:${tid}`);
     if (t && t.username === username) {
-      return NextResponse.json({ error: 'Bu kullanıcı adı zaten kullanılıyor' }, { status: 400 });
+      return NextResponse.json({ error: 'Bu isimde bir öğretmen zaten kayıtlı' }, { status: 400 });
     }
   }
 
@@ -65,11 +68,11 @@ export async function PUT(req) {
     return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
   }
 
-  const { id, name, username, password, branch, allowedGroups } = await req.json();
+  const { id, name, password, branch, allowedGroups } = await req.json();
   const teacher = await redis.get(`teacher:${id}`);
   if (!teacher) return NextResponse.json({ error: 'Öğretmen bulunamadı' }, { status: 404 });
 
-  const updated = { ...teacher, name, username, branch, allowedGroups: allowedGroups || teacher.allowedGroups };
+  const updated = { ...teacher, name, username: name, branch, allowedGroups: allowedGroups || teacher.allowedGroups };
   if (password) {
     updated.passwordHash = await bcrypt.hash(password, 10);
   }

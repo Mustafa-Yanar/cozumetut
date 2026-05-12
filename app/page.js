@@ -835,7 +835,7 @@ function DirectorPanel({ session, showToast }) {
                   </div>
                   <div>
                     <div className="font-600" style={{ fontWeight:600 }}>{t.name}</div>
-                    <div className="text-xs text-gray-500">{t.branch} · @{t.username}</div>
+                    <div className="text-xs text-gray-500">{t.branch}</div>
                     <div className="flex gap-1 mt-1 flex-wrap">
                       {(t.allowedGroups||[]).map(g => <span key={g} className="badge" style={{ background:'#e0e7ff',color:'#4338ca' }}>{GROUPS[g]}</span>)}
                       {(t.allowedGroups||[]).length===0 && <span className="badge" style={{ background:'#f3f4f6',color:'#9ca3af' }}>Tüm gruplar</span>}
@@ -1050,18 +1050,16 @@ function StudentList({ students, onEdit, onDelete }) {
 
 function TeacherForm({ initial, onClose, onSave }) {
   const [name, setName] = useState(initial?.name||'');
-  const [username, setUsername] = useState(initial?.username||'');
   const [password, setPassword] = useState('');
   const [branch, setBranch] = useState(initial?.branch||BRANCHES[0]);
   const [allowedGroups, setAllowedGroups] = useState(initial?.allowedGroups||[]);
   const [loading, setLoading] = useState(false);
   const toggleGroup = g => setAllowedGroups(prev => prev.includes(g)?prev.filter(x=>x!==g):[...prev,g]);
-  const submit = async e => { e.preventDefault(); setLoading(true); await onSave({name,username,password,branch,allowedGroups}); setLoading(false); };
+  const submit = async e => { e.preventDefault(); setLoading(true); await onSave({name, username: name, password,branch,allowedGroups}); setLoading(false); };
   return (
     <Modal title={initial?'Öğretmen Düzenle':'Yeni Öğretmen'} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <FormField label="Ad Soyad"><input className="input" value={name} onChange={e=>setName(e.target.value)} required /></FormField>
-        <FormField label="Kullanıcı Adı"><input className="input" value={username} onChange={e=>setUsername(e.target.value)} required /></FormField>
         <FormField label={initial?'Şifre (boş bırakırsan değişmez)':'Şifre'}>
           <input className="input" type="password" value={password} onChange={e=>setPassword(e.target.value)} required={!initial} />
         </FormField>
