@@ -1092,18 +1092,16 @@ function TeacherForm({ initial, onClose, onSave }) {
 
 function StudentForm({ initial, onClose, onSave }) {
   const [name, setName] = useState(initial?.name||'');
-  const [username, setUsername] = useState(initial?.username||'');
   const [password, setPassword] = useState('');
   const [selectedGroup, setSelectedGroup] = useState(initial?.group||'ortaokul');
   const [cls, setCls] = useState(initial?.cls||STUDENT_GROUPS.ortaokul.classes[0]);
   const [loading, setLoading] = useState(false);
   useEffect(() => { if (!initial) setCls(STUDENT_GROUPS[selectedGroup].classes[0]); }, [selectedGroup]);
-  const submit = async e => { e.preventDefault(); setLoading(true); await onSave({name,username,password,cls}); setLoading(false); };
+  const submit = async e => { e.preventDefault(); setLoading(true); await onSave({name, username: name, password, cls}); setLoading(false); };
   return (
     <Modal title={initial?'Öğrenci Düzenle':'Yeni Öğrenci'} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <FormField label="Ad Soyad"><input className="input" value={name} onChange={e=>setName(e.target.value)} required /></FormField>
-        <FormField label="Kullanıcı Adı"><input className="input" value={username} onChange={e=>setUsername(e.target.value)} required /></FormField>
         <FormField label={initial?'Şifre (boş bırakırsan değişmez)':'Şifre'}>
           <input className="input" type="password" value={password} onChange={e=>setPassword(e.target.value)} required={!initial} />
         </FormField>

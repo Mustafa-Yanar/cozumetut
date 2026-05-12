@@ -30,20 +30,23 @@ export async function POST(req) {
     return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
   }
 
-  const { name, username, password, cls } = await req.json();
-  if (!name || !username || !password || !cls) {
+  const { name, password, cls } = await req.json();
+  if (!name || !password || !cls) {
     return NextResponse.json({ error: 'Tüm alanlar gerekli' }, { status: 400 });
   }
+
+  // İsim soyisim kullanıcı adı olarak kullanılır
+  const username = name;
 
   const group = classToGroup(cls);
   if (!group) return NextResponse.json({ error: 'Geçersiz sınıf' }, { status: 400 });
 
-  // Check username uniqueness
+  // Aynı isimde öğrenci var mı kontrol et
   const studentIds = await redis.smembers('students');
   for (const sid of studentIds) {
     const s = await redis.get(`student:${sid}`);
     if (s && s.username === username) {
-      return NextResponse.json({ error: 'Bu kullanıcı adı zaten kullanılıyor' }, { status: 400 });
+      return NextResponse.json({ error: 'Bu isimde bir öğrenci zaten kayıtlı' }, { status: 400 });
     }
   }
 
@@ -62,12 +65,12 @@ export async function PUT(req) {
     return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
   }
 
-  const { id, name, username, password, cls } = await req.json();
+  const { id, name, password, cls } = await req.json();
   const student = await redis.get(`student:${id}`);
   if (!student) return NextResponse.json({ error: 'Öğrenci bulunamadı' }, { status: 404 });
 
   const group = classToGroup(cls) || student.group;
-  const updated = { ...student, name, username, cls, group };
+  const updated = { ...student, name, username: name, cls, group };
   if (password) {
     updated.passwordHash = await bcrypt.hash(password, 10);
   }
