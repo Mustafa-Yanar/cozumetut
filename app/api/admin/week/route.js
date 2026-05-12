@@ -1,15 +1,12 @@
 import { NextResponse } from 'next/server';
 import redis from '@/lib/redis';
 import { getSession } from '@/lib/auth';
-import { getWeekKey, getMondayOfWeek, initWeekForTeacher, getTeacherWeekSlots, slotKey } from '@/lib/slots';
-import { TIME_SLOTS } from '@/lib/constants';
+import { getWeekKey, getMondayOfWeek, initWeekForTeacher } from '@/lib/slots';
 
-// Advance to next week: copy manually-modified slots, then initialize new week
 async function advanceWeek(currentWeek) {
   const ids = await redis.smembers('teachers');
-  if (!ids || ids.length === 0) return;
+  if (!ids || ids.length === 0) return getWeekKey();
 
-  // Compute next week key
   const monday = getMondayOfWeek(currentWeek);
   const nextMonday = new Date(monday);
   nextMonday.setDate(monday.getDate() + 7);
@@ -18,14 +15,10 @@ async function advanceWeek(currentWeek) {
   for (const tid of ids) {
     const teacher = await redis.get(`teacher:${tid}`);
     if (!teacher) continue;
-
-    // Get current week's manually-set exceptions (blocked slots etc.) — for now just init fresh
     await initWeekForTeacher(tid, nextWeek);
   }
 
-  // Store current week key
   await redis.set('current_week', nextWeek);
-
   return nextWeek;
 }
 

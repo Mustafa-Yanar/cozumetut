@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import redis from '@/lib/redis';
 import { getSession } from '@/lib/auth';
 import { getWeekKey, getTeacherWeekSlots, slotKey, getAllTeachers } from '@/lib/slots';
-import { TIME_SLOTS, WEEKDAYS, MEZUN_FORBIDDEN_SLOT } from '@/lib/constants';
+import { ALL_DAYS, slotsForDay, MEZUN_FORBIDDEN_SLOT } from '@/lib/constants';
 
 // GET /api/slots?week=2024-W20&teacherId=xxx
 export async function GET(req) {
@@ -18,24 +18,25 @@ export async function GET(req) {
     return NextResponse.json({ weekKey, grid });
   }
 
-  // Return all teachers' slots for the week
   const teachers = await getAllTeachers();
   const allSlots = [];
 
   for (const teacher of teachers) {
     const grid = await getTeacherWeekSlots(teacher.id, weekKey);
-    for (let d = 0; d < 5; d++) {
-      for (let s = 0; s < TIME_SLOTS.length; s++) {
-        const slotData = grid[d][s] || { booked: false };
+    for (const day of ALL_DAYS) {
+      const slots = slotsForDay(day.index);
+      for (let s = 0; s < slots.length; s++) {
+        const slotData = grid[day.index][s] || { booked: false, disabled: true };
         allSlots.push({
           teacherId: teacher.id,
           teacherName: teacher.name,
           branch: teacher.branch,
           allowedGroups: teacher.allowedGroups || [],
-          day: d,
-          dayLabel: WEEKDAYS[d],
-          slotId: TIME_SLOTS[s].id,
-          slotLabel: TIME_SLOTS[s].label,
+          day: day.index,
+          dayLabel: day.label,
+          weekend: day.weekend,
+          slotId: slots[s].id,
+          slotLabel: slots[s].label,
           ...slotData,
         });
       }
@@ -56,6 +57,16 @@ export async function POST(req) {
   const teacher = await redis.get(`teacher:${teacherId}`);
   if (!teacher) return NextResponse.json({ error: 'Öğretmen bulunamadı' }, { status: 404 });
 
+  // Slot kapalı mı kontrol et
+  const key = slotKey(weekKey, teacherId, day, slotId);
+  const existing = await redis.get(key);
+  if (existing && existing.disabled) {
+    return NextResponse.json({ error: 'Bu saat dilimi kapalıdır' }, { status: 400 });
+  }
+  if (existing && existing.booked) {
+    return NextResponse.json({ error: 'Bu saat dilimi zaten dolu' }, { status: 400 });
+  }
+
   let targetStudentId = studentId;
   let targetStudent;
 
@@ -63,7 +74,6 @@ export async function POST(req) {
     targetStudentId = session.id;
     targetStudent = await redis.get(`student:${session.id}`);
   } else if (session.role === 'teacher') {
-    // Teacher can only book for their own slots
     if (teacherId !== session.id) {
       return NextResponse.json({ error: 'Sadece kendi slotlarınıza rezervasyon yapabilirsiniz' }, { status: 403 });
     }
@@ -74,41 +84,35 @@ export async function POST(req) {
 
   if (!targetStudent) return NextResponse.json({ error: 'Öğrenci bulunamadı' }, { status: 404 });
 
-  // Group access check
+  // Grup erişim kontrolü
   const allowedGroups = teacher.allowedGroups || [];
   if (allowedGroups.length > 0 && !allowedGroups.includes(targetStudent.group)) {
     return NextResponse.json({ error: 'Bu öğrenci bu öğretmenin etütlerine kayıt olamaz' }, { status: 400 });
   }
 
-  // Mezun forbidden slot check
+  // Mezun yasak slot kontrolü
   if (targetStudent.group === 'mezun' && slotId === MEZUN_FORBIDDEN_SLOT) {
     return NextResponse.json({ error: 'Mezun öğrenciler 16:30-17:00 saatindeki etüde kayıt olamaz' }, { status: 400 });
   }
 
-  // Weekly limit: 1 per branch per student
-  const allSlotKeys = [];
-  for (let d = 0; d < 5; d++) {
-    for (const slot of TIME_SLOTS) {
-      allSlotKeys.push(slotKey(weekKey, teacherId, d, slot.id));
+  // Haftalık limit: aynı branştan 1 etüt
+  const allTeacherSlotKeys = [];
+  for (const day2 of ALL_DAYS) {
+    for (const slot of slotsForDay(day2.index)) {
+      allTeacherSlotKeys.push(slotKey(weekKey, teacherId, day2.index, slot.id));
     }
   }
   const pipeline = redis.pipeline();
-  allSlotKeys.forEach(k => pipeline.get(k));
+  allTeacherSlotKeys.forEach(k => pipeline.get(k));
   const existingSlots = await pipeline.exec();
   const alreadyBooked = existingSlots.some(s => s && s.booked && s.studentId === targetStudentId);
   if (alreadyBooked) {
     return NextResponse.json({ error: `Bu öğrenci bu hafta ${teacher.branch} dersinden zaten etüt almış` }, { status: 400 });
   }
 
-  // Check if slot is already booked
-  const key = slotKey(weekKey, teacherId, day, slotId);
-  const existing = await redis.get(key);
-  if (existing && existing.booked) {
-    return NextResponse.json({ error: 'Bu saat dilimi zaten dolu' }, { status: 400 });
-  }
-
   const bookedData = {
     booked: true,
+    disabled: false,
     studentId: targetStudentId,
     studentName: targetStudent.name,
     studentCls: targetStudent.cls,
@@ -116,7 +120,7 @@ export async function POST(req) {
     bookedAt: new Date().toISOString(),
   };
 
-  await redis.set(key, bookedData, { ex: 60 * 60 * 24 * 14 });
+  await redis.set(key, bookedData, { ex: 60 * 60 * 24 * 16 });
 
   return NextResponse.json({ ok: true, slot: bookedData });
 }
@@ -135,7 +139,6 @@ export async function DELETE(req) {
     return NextResponse.json({ error: 'Rezervasyon bulunamadı' }, { status: 404 });
   }
 
-  // Permission check
   if (session.role === 'student' && existing.studentId !== session.id) {
     return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
   }
@@ -143,7 +146,12 @@ export async function DELETE(req) {
     return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
   }
 
-  await redis.set(key, { booked: false }, { ex: 60 * 60 * 24 * 14 });
+  // Şablona göre disabled durumunu geri yükle
+  const template = await redis.get(`template:${teacherId}`);
+  const openSlots = template?.[day] || [];
+  const disabled = !openSlots.includes(slotId);
+
+  await redis.set(key, { booked: false, disabled }, { ex: 60 * 60 * 24 * 16 });
 
   return NextResponse.json({ ok: true });
 }

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import redis from '@/lib/redis';
 import { getWeekKey, getMondayOfWeek, initWeekForTeacher } from '@/lib/slots';
 
-// This runs every Sunday at 11:00 AM (configured in vercel.json)
+// Pazar 11:00 UTC+3 = 08:00 UTC → "0 8 * * 0"
 export async function GET(req) {
   const authHeader = req.headers.get('authorization');
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -12,20 +12,18 @@ export async function GET(req) {
   const ids = await redis.smembers('teachers');
   if (!ids || ids.length === 0) return NextResponse.json({ ok: true, message: 'No teachers' });
 
-  // Current stored week
   const stored = await redis.get('current_week');
   const currentWeek = stored || getWeekKey();
 
-  // Compute next week
   const monday = getMondayOfWeek(currentWeek);
   const nextMonday = new Date(monday);
   nextMonday.setDate(monday.getDate() + 7);
   const nextWeek = getWeekKey(nextMonday);
 
-  // Initialize slots for all teachers in the next week
   for (const tid of ids) {
     const teacher = await redis.get(`teacher:${tid}`);
     if (!teacher) continue;
+    // initWeekForTeacher şablona göre slotları açar/kapatır
     await initWeekForTeacher(tid, nextWeek);
   }
 
