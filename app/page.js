@@ -463,7 +463,8 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
     }
   }
 
-  const allClasses = Object.values(STUDENT_GROUPS).flatMap(g => g.classes);
+  const allowedGroups = teacher.allowedGroups?.length ? teacher.allowedGroups : Object.keys(STUDENT_GROUPS);
+  const allClasses = allowedGroups.flatMap(g => STUDENT_GROUPS[g]?.classes || []);
   const allowedStudents = students
     ? students.filter(s => !teacher.allowedGroups?.length || teacher.allowedGroups.includes(s.group))
     : [];
