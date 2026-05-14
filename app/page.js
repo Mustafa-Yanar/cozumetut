@@ -473,6 +473,7 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
   function CellEditor({ dayIndex, slotId }) {
     const entry = getEntry(dayIndex, slotId);
     const type = entry?.type || null;
+    const [studentSearch, setStudentSearch] = useState('');
 
     return (
       <div className="p-4 border-t border-gray-100 bg-gray-50">
@@ -508,15 +509,37 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
         {type === 'etut' && (
           <div className="space-y-2">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Öğrenci (boş = açık slot)</label>
-              <select value={entry?.studentId || ''} onChange={e => {
-                const s = allowedStudents.find(s => s.id === e.target.value);
-                setEntry(dayIndex, slotId, { type: 'etut', studentId: s?.id || '', studentName: s?.name || '', studentCls: s?.cls || '', fixed: entry?.fixed || false });
-              }}
-                className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300">
-                <option value="">— Açık slot —</option>
-                {allowedStudents.map(s => <option key={s.id} value={s.id}>{s.name} ({s.cls.toUpperCase()})</option>)}
-              </select>
+              <label className="block text-xs text-gray-500 mb-1">Öğrenci (boş bırakılırsa açık slot)</label>
+              <input
+                className="input text-xs mb-1"
+                placeholder="İsim veya sınıf kodu ara..."
+                value={studentSearch}
+                onChange={e => setStudentSearch(e.target.value)}
+                autoFocus
+              />
+              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg bg-white">
+                <button
+                  onClick={() => { setEntry(dayIndex, slotId, { type: 'etut', studentId: '', studentName: '', studentCls: '', fixed: false }); setStudentSearch(''); }}
+                  className={`w-full text-left px-3 py-2 text-xs transition-colors ${!entry?.studentId ? 'bg-emerald-50 text-emerald-700 font-600' : 'text-gray-400 hover:bg-gray-50'}`}
+                  style={{ fontWeight: !entry?.studentId ? 600 : 400 }}>
+                  — Açık slot —
+                </button>
+                {allowedStudents
+                  .filter(s => {
+                    const q = studentSearch.toLowerCase();
+                    return !q || s.name.toLowerCase().includes(q) || s.cls.toLowerCase().includes(q) || classLabel(s.cls).toLowerCase().includes(q);
+                  })
+                  .slice(0, 20)
+                  .map(s => (
+                    <button key={s.id}
+                      onClick={() => { setEntry(dayIndex, slotId, { type: 'etut', studentId: s.id, studentName: s.name, studentCls: s.cls, fixed: entry?.fixed || false }); setStudentSearch(''); }}
+                      className={`w-full text-left px-3 py-2 text-xs transition-colors ${entry?.studentId === s.id ? 'bg-emerald-50 text-emerald-700 font-600' : 'hover:bg-gray-50 text-gray-700'}`}
+                      style={{ fontWeight: entry?.studentId === s.id ? 600 : 400 }}>
+                      <span className="font-600" style={{ fontWeight: 600 }}>{s.name}</span>
+                      <span className="text-gray-400 ml-1.5">{classLabel(s.cls)}</span>
+                    </button>
+                  ))}
+              </div>
             </div>
             {entry?.studentId && (
               <label className="flex items-center gap-2 cursor-pointer select-none">
