@@ -5,7 +5,7 @@ import {
   BookOpen, Users, LogOut, Plus, Trash2, Edit3, Save, X,
   Search, Calendar, Clock, User, Check,
   BookMarked, GraduationCap, Shield, ChevronLeft, ChevronRight,
-  RefreshCw, Settings, Lock, LayoutGrid, List
+  RefreshCw, Settings, Lock, LayoutGrid, List, ClipboardList, BookText
 } from 'lucide-react';
 
 const BRANCHES = ['Türkçe', 'Matematik', 'Fizik', 'Kimya', 'Biyoloji', 'Tarih', 'Coğrafya', 'Fen Bilgisi', 'Sosyal Bilgiler', 'İnkılap Tarihi', 'İngilizce'];
@@ -379,6 +379,117 @@ function SlotCell({ slotData, slot, dayIndex, slotIdx, session, teacher, onCellC
 }
 
 // ─── ŞABLON EDITÖRÜ ────────────────────────────────────────────────────────────
+// ─── DERS PROGRAMI EDİTÖRÜ ─────────────────────────────────────────────────────
+function LessonScheduleEditor({ teacher, onClose, showToast }) {
+  // schedule: { [dayIndex]: { [lessonNo]: cls | '' } }
+  const [schedule, setSchedule] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await api(`/api/lesson-schedule?teacherId=${teacher.id}`);
+        // Normalize: tüm gün/ders slotlarını doldur
+        const normalized = {};
+        ALL_DAYS.forEach(day => {
+          const lessonCount = day.index >= 5 ? 8 : 6;
+          normalized[day.index] = {};
+          for (let ln = 1; ln <= lessonCount; ln++) {
+            normalized[day.index][ln] = data[day.index]?.[ln] || '';
+          }
+        });
+        setSchedule(normalized);
+      } catch {
+        // Boş şablon oluştur
+        const empty = {};
+        ALL_DAYS.forEach(day => {
+          const lessonCount = day.index >= 5 ? 8 : 6;
+          empty[day.index] = {};
+          for (let ln = 1; ln <= lessonCount; ln++) empty[day.index][ln] = '';
+        });
+        setSchedule(empty);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [teacher.id]);
+
+  const allClasses = Object.values(STUDENT_GROUPS).flatMap(g => g.classes);
+
+  function setCls(dayIndex, lessonNo, cls) {
+    setSchedule(prev => ({
+      ...prev,
+      [dayIndex]: { ...prev[dayIndex], [lessonNo]: cls },
+    }));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      // Boş stringleri null'a çevir
+      const cleaned = {};
+      Object.entries(schedule).forEach(([d, lessons]) => {
+        cleaned[d] = {};
+        Object.entries(lessons).forEach(([ln, cls]) => {
+          if (cls) cleaned[d][ln] = cls;
+        });
+      });
+      await api('/api/lesson-schedule', { method: 'POST', body: JSON.stringify({ teacherId: teacher.id, schedule: cleaned }) });
+      showToast('Ders programı kaydedildi');
+      onClose();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title={`${teacher.name} – Ders Programı`} onClose={onClose} wide>
+      {loading ? (
+        <div className="flex items-center justify-center h-40 text-gray-400">Yükleniyor...</div>
+      ) : (
+        <>
+          <p className="text-xs text-gray-500 mb-4">Her güne ve ders saatine bir sınıf atayın. Boş bırakılan slotlar ders yok sayılır. Bu şablon değiştirilene kadar geçerlidir.</p>
+          <div className="space-y-4">
+            {ALL_DAYS.map(day => {
+              const lessonCount = day.index >= 5 ? 8 : 6;
+              return (
+                <div key={day.index}>
+                  <div className="text-xs font-600 text-gray-500 uppercase tracking-wide mb-2" style={{ fontWeight: 600 }}>{day.label}</div>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                    {Array.from({ length: lessonCount }, (_, i) => i + 1).map(ln => (
+                      <div key={ln}>
+                        <div className="text-[10px] text-gray-400 mb-1 text-center">{ln}. Ders</div>
+                        <select
+                          value={schedule[day.index]?.[ln] || ''}
+                          onChange={e => setCls(day.index, ln, e.target.value)}
+                          className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                          <option value="">—</option>
+                          {allClasses.map(cls => (
+                            <option key={cls} value={cls}>{cls.toUpperCase()}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex justify-end gap-2 mt-6">
+            <button className="btn-ghost" onClick={onClose}>İptal</button>
+            <button className="btn-primary flex items-center gap-1.5" onClick={handleSave} disabled={saving}>
+              <Save size={14} /> {saving ? 'Kaydediliyor...' : 'Kaydet'}
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
 function TemplateEditor({ teacher, onClose, onSave, showToast }) {
   const [template, setTemplate] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -544,11 +655,260 @@ function LoginScreen({ onLogin, directorExists, showToast }) {
 }
 
 // ─── TEACHER PANEL ─────────────────────────────────────────────────────────────
+// ─── ÖĞRETMEN YOKLAMA PANELİ ───────────────────────────────────────────────────
+function TeacherAttendancePanel({ session, weekKey, showToast }) {
+  const [schedule, setSchedule] = useState(null);
+  const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [openDays, setOpenDays] = useState({});
+  const [openClasses, setOpenClasses] = useState({});
+  // attendance: { [`${date}_${cls}_${lessonNo}`]: { studentId: 'var'|'gec'|'yok' } }
+  const [attendance, setAttendance] = useState({});
+  const [saving, setSaving] = useState({});
+
+  // Haftanın Pazartesi tarihini hesapla
+  const mondayDate = useMemo(() => {
+    const [year, wStr] = weekKey.split('-W');
+    const week = parseInt(wStr);
+    const jan4 = new Date(parseInt(year), 0, 4);
+    const dow = jan4.getDay() || 7;
+    const mon = new Date(jan4);
+    mon.setDate(jan4.getDate() - dow + 1 + (week - 1) * 7);
+    return mon;
+  }, [weekKey]);
+
+  function dateForDay(dayIndex) {
+    const d = new Date(mondayDate);
+    d.setDate(mondayDate.getDate() + dayIndex);
+    return d.toISOString().slice(0, 10);
+  }
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [schData, stuData] = await Promise.all([
+          api(`/api/lesson-schedule?teacherId=${session.id}`),
+          api('/api/students'),
+        ]);
+        setSchedule(schData);
+        setStudents(stuData);
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [session.id]);
+
+  // Ders programından o haftaya ait gün → sınıf → dersler listesi
+  const days = useMemo(() => {
+    if (!schedule) return [];
+    return ALL_DAYS.map(day => {
+      const daySchedule = schedule[String(day.index)] || {};
+      const lessonCount = day.index >= 5 ? 8 : 6;
+      const lessons = [];
+      for (let ln = 1; ln <= lessonCount; ln++) {
+        const cls = daySchedule[String(ln)];
+        if (cls) lessons.push({ lessonNo: ln, cls });
+      }
+      if (lessons.length === 0) return null;
+      // Aynı sınıfı grupla: her benzersiz cls için tüm dersleri listele
+      const clsMap = {};
+      lessons.forEach(l => {
+        if (!clsMap[l.cls]) clsMap[l.cls] = [];
+        clsMap[l.cls].push(l.lessonNo);
+      });
+      return { dayIndex: day.index, dayLabel: day.label, clsMap };
+    }).filter(Boolean);
+  }, [schedule]);
+
+  // Bir sınıfın öğrencileri (sınıf koduna göre filtrele)
+  const studentsForCls = useCallback((cls) => {
+    return students.filter(s => s.cls === cls);
+  }, [students]);
+
+  async function loadAttendance(date, cls, lessonNo) {
+    const key = `${date}_${cls}_${lessonNo}`;
+    if (attendance[key] !== undefined) return;
+    try {
+      const data = await api(`/api/attendance?date=${date}&teacherId=${session.id}&cls=${cls}&lessonNo=${lessonNo}`);
+      setAttendance(prev => ({ ...prev, [key]: data }));
+    } catch {
+      setAttendance(prev => ({ ...prev, [key]: {} }));
+    }
+  }
+
+  function toggleDay(dayIndex) {
+    setOpenDays(p => ({ ...p, [dayIndex]: !p[dayIndex] }));
+  }
+
+  function toggleClass(dayIndex, cls) {
+    const key = `${dayIndex}_${cls}`;
+    if (!openClasses[key]) {
+      const date = dateForDay(dayIndex);
+      // O sınıfın tüm derslerini yükle
+      const daySchedule = schedule?.[String(dayIndex)] || {};
+      const lessonCount = dayIndex >= 5 ? 8 : 6;
+      for (let ln = 1; ln <= lessonCount; ln++) {
+        if (daySchedule[String(ln)] === cls) loadAttendance(date, cls, ln);
+      }
+    }
+    setOpenClasses(p => ({ ...p, [key]: !p[key] }));
+  }
+
+  function setStatus(date, cls, lessonNo, studentId, status) {
+    const key = `${date}_${cls}_${lessonNo}`;
+    setAttendance(prev => ({
+      ...prev,
+      [key]: { ...(prev[key] || {}), [studentId]: status },
+    }));
+  }
+
+  async function saveAttendance(dayIndex, cls, lessonNo) {
+    const date = dateForDay(dayIndex);
+    const key = `${date}_${cls}_${lessonNo}`;
+    setSaving(p => ({ ...p, [key]: true }));
+    try {
+      await api('/api/attendance', {
+        method: 'POST',
+        body: JSON.stringify({ date, cls, lessonNo, attendance: attendance[key] || {} }),
+      });
+      showToast('Yoklama kaydedildi', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setSaving(p => ({ ...p, [key]: false }));
+    }
+  }
+
+  const STATUS_OPTS = [
+    { value: 'var', label: 'Var', active: 'bg-emerald-500 text-white border-emerald-500' },
+    { value: 'gec', label: 'Geç', active: 'bg-amber-500 text-white border-amber-500' },
+    { value: 'yok', label: 'Yok', active: 'bg-red-500 text-white border-red-500' },
+  ];
+
+  if (loading) return <div className="flex items-center justify-center h-40 text-gray-400">Yükleniyor...</div>;
+
+  if (days.length === 0) {
+    return (
+      <div className="card p-10 text-center text-gray-400">
+        <ClipboardList size={32} className="mx-auto mb-2 opacity-30" />
+        <p>Bu hafta için ders programı tanımlanmamış.</p>
+        <p className="text-xs mt-1">Müdür panelinden ders programı oluşturulmalı.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {days.map(day => {
+        const dOpen = !!openDays[day.dayIndex];
+        const clsList = Object.entries(day.clsMap);
+        return (
+          <div key={day.dayIndex} className="card overflow-hidden">
+            <button onClick={() => toggleDay(day.dayIndex)}
+              className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 transition-colors">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0"
+                  style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+                  <Calendar size={16} />
+                </div>
+                <div className="text-left">
+                  <div className="font-700 text-gray-900 text-sm" style={{ fontWeight: 700 }}>{day.dayLabel}</div>
+                  <div className="text-xs text-gray-500">{clsList.length} sınıf</div>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-gray-400 shrink-0 transition-transform" style={{ transform: dOpen ? 'rotate(90deg)' : 'rotate(0)' }} />
+            </button>
+
+            {dOpen && (
+              <div className="border-t border-gray-100 px-3 py-2 space-y-1.5">
+                {clsList.map(([cls, lessonNos]) => {
+                  const ck = `${day.dayIndex}_${cls}`;
+                  const cOpen = !!openClasses[ck];
+                  const stuList = studentsForCls(cls);
+                  const date = dateForDay(day.dayIndex);
+
+                  return (
+                    <div key={cls} className="rounded-xl overflow-hidden border border-gray-100">
+                      <button onClick={() => toggleClass(day.dayIndex, cls)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors">
+                        <div className="flex items-center gap-2">
+                          <GraduationCap size={14} className="text-indigo-500 shrink-0" />
+                          <span className="text-sm font-600 text-gray-800" style={{ fontWeight: 600 }}>{cls.toUpperCase()}</span>
+                          <span className="text-xs text-gray-400">{stuList.length} öğrenci · {lessonNos.length} ders</span>
+                        </div>
+                        <ChevronRight size={14} className="text-gray-400 shrink-0 transition-transform" style={{ transform: cOpen ? 'rotate(90deg)' : 'rotate(0)' }} />
+                      </button>
+
+                      {cOpen && (
+                        <div className="bg-white">
+                          {lessonNos.map(ln => {
+                            const attKey = `${date}_${cls}_${ln}`;
+                            const att = attendance[attKey] || {};
+                            return (
+                              <div key={ln} className="px-3 py-2 border-b border-gray-50 last:border-0">
+                                <div className="text-[11px] font-600 text-indigo-600 mb-2" style={{ fontWeight: 600 }}>{ln}. Ders</div>
+                                {stuList.length === 0 ? (
+                                  <p className="text-xs text-gray-400 py-1">Bu sınıfta kayıtlı öğrenci yok.</p>
+                                ) : (
+                                  <>
+                                    <div className="space-y-1 mb-2">
+                                      {stuList.map(student => {
+                                        const current = att[student.id];
+                                        return (
+                                          <div key={student.id} className="flex items-center justify-between py-1">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                              <User size={12} className="text-gray-400 shrink-0" />
+                                              <span className="text-sm text-gray-800 truncate">{student.name}</span>
+                                            </div>
+                                            <div className="flex gap-1 shrink-0 ml-2">
+                                              {STATUS_OPTS.map(opt => (
+                                                <button key={opt.value}
+                                                  onClick={() => setStatus(date, cls, ln, student.id, opt.value)}
+                                                  className={`text-[11px] px-2.5 py-1 rounded-lg border font-600 transition-all ${current === opt.value ? opt.active : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}
+                                                  style={{ fontWeight: 600 }}>
+                                                  {opt.label}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                    <button
+                                      onClick={() => saveAttendance(day.dayIndex, cls, ln)}
+                                      disabled={saving[`${date}_${cls}_${ln}`]}
+                                      className="w-full py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-600 hover:bg-indigo-700 transition-colors disabled:opacity-60"
+                                      style={{ fontWeight: 600 }}>
+                                      {saving[`${date}_${cls}_${ln}`] ? 'Kaydediliyor...' : `${ln}. Ders Yoklamasını Kaydet`}
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function TeacherPanel({ session, showToast }) {
   const [weekKey, setWeekKey] = useState(getWeekKey());
   const [slots, setSlots] = useState(null);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('rezervasyon'); // 'rezervasyon' | 'yoklama'
   const [viewMode, setViewMode] = useState('table'); // 'table' | 'list'
 
   const loadData = useCallback(async (wk) => {
@@ -630,32 +990,61 @@ function TeacherPanel({ session, showToast }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex rounded-lg border border-gray-200 overflow-hidden shrink-0">
-          <button
-            onClick={() => setViewMode('table')}
-            className={`px-3 py-1.5 text-xs flex items-center gap-1 transition-colors ${viewMode === 'table' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-            <LayoutGrid size={13} /> Tablo
-          </button>
-          <button
-            onClick={() => setViewMode('list')}
-            className={`px-3 py-1.5 text-xs flex items-center gap-1 transition-colors ${viewMode === 'list' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-            <List size={13} /> Liste
-          </button>
-        </div>
-        <WeekNav weekKey={weekKey} onPrev={() => handleWeekChange(getAdjacentWeek(weekKey,-1))} onNext={() => handleWeekChange(getAdjacentWeek(weekKey,1))} />
+      {/* Sekme başlıkları */}
+      <div className="flex rounded-xl border border-gray-200 overflow-hidden mb-4 w-fit">
+        <button
+          onClick={() => setActiveTab('rezervasyon')}
+          className={`px-4 py-2 text-xs flex items-center gap-1.5 transition-colors font-600 ${activeTab === 'rezervasyon' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+          style={{ fontWeight: 600 }}>
+          <Calendar size={13} /> Rezervasyonlar
+        </button>
+        <button
+          onClick={() => setActiveTab('yoklama')}
+          className={`px-4 py-2 text-xs flex items-center gap-1.5 transition-colors font-600 ${activeTab === 'yoklama' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+          style={{ fontWeight: 600 }}>
+          <ClipboardList size={13} /> Yoklama
+        </button>
       </div>
 
-      {viewMode === 'table' ? (
+      {activeTab === 'rezervasyon' && (
         <>
-          <div className="card p-4">
-            <SlotGrid grid={slots} teacher={{ id: session.id, name: session.name, branch: session.branch }} weekKey={weekKey} session={session} students={students} onBook={handleBook} onCancel={handleCancel} hideEmptyDays />
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden shrink-0">
+              <button
+                onClick={() => setViewMode('table')}
+                className={`px-3 py-1.5 text-xs flex items-center gap-1 transition-colors ${viewMode === 'table' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                <LayoutGrid size={13} /> Tablo
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`px-3 py-1.5 text-xs flex items-center gap-1 transition-colors ${viewMode === 'list' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                <List size={13} /> Liste
+              </button>
+            </div>
+            <WeekNav weekKey={weekKey} onPrev={() => handleWeekChange(getAdjacentWeek(weekKey,-1))} onNext={() => handleWeekChange(getAdjacentWeek(weekKey,1))} />
           </div>
-          <p className="text-xs text-gray-400 mt-3 text-center">✕ = kapalı saat &nbsp;·&nbsp; + = rezervasyon yapılabilir</p>
+
+          {viewMode === 'table' ? (
+            <>
+              <div className="card p-4">
+                <SlotGrid grid={slots} teacher={{ id: session.id, name: session.name, branch: session.branch }} weekKey={weekKey} session={session} students={students} onBook={handleBook} onCancel={handleCancel} hideEmptyDays />
+              </div>
+              <p className="text-xs text-gray-400 mt-3 text-center">✕ = kapalı saat &nbsp;·&nbsp; + = rezervasyon yapılabilir</p>
+            </>
+          ) : (
+            <TeacherBookingsList bookedList={bookedList} listColorMap={listColorMap}
+              onCancel={item => handleCancel({ teacherId: session.id, day: item.dayIndex, slotId: item.slotId })} />
+          )}
         </>
-      ) : (
-        <TeacherBookingsList bookedList={bookedList} listColorMap={listColorMap}
-          onCancel={item => handleCancel({ teacherId: session.id, day: item.dayIndex, slotId: item.slotId })} />
+      )}
+
+      {activeTab === 'yoklama' && (
+        <>
+          <div className="flex justify-end mb-4">
+            <WeekNav weekKey={weekKey} onPrev={() => handleWeekChange(getAdjacentWeek(weekKey,-1))} onNext={() => handleWeekChange(getAdjacentWeek(weekKey,1))} />
+          </div>
+          <TeacherAttendancePanel session={session} weekKey={weekKey} showToast={showToast} />
+        </>
       )}
     </div>
   );
@@ -938,6 +1327,175 @@ function TeacherBookingsList({ bookedList, listColorMap, onCancel, canCancelAll 
 }
 
 // ─── DIRECTOR PANEL ────────────────────────────────────────────────────────────
+// ─── MÜDÜR YOKLAMA PANELİ ──────────────────────────────────────────────────────
+function AttendanceSummaryModal({ cls, date, onClose }) {
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const data = await api(`/api/attendance/summary?date=${date}`);
+        setSummary(data[cls] || null);
+      } catch {
+        setSummary(null);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [cls, date]);
+
+  const dayName = (() => {
+    const d = new Date(date);
+    const names = ['Pazar','Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi'];
+    return names[d.getDay()];
+  })();
+
+  return (
+    <Modal title={`${cls.toUpperCase()} – ${dayName} Yoklama Özeti`} onClose={onClose}>
+      {loading ? (
+        <div className="flex items-center justify-center h-32 text-gray-400">Yükleniyor...</div>
+      ) : !summary || summary.lessons.length === 0 ? (
+        <div className="py-8 text-center text-gray-400">
+          <ClipboardList size={28} className="mx-auto mb-2 opacity-30" />
+          <p className="text-sm">Bu gün için yoklama kaydı yok.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {summary.lessons.map(lesson => {
+            const hasAbsent = lesson.absent.length > 0;
+            const hasLate = lesson.late.length > 0;
+            if (!hasAbsent && !hasLate) return (
+              <div key={lesson.lessonNo} className="rounded-xl bg-gray-50 px-4 py-3">
+                <div className="text-xs font-600 text-gray-600 mb-1" style={{ fontWeight: 600 }}>{lesson.lessonNo}. Ders <span className="text-gray-400 font-400">· {lesson.teacherName}</span></div>
+                <p className="text-xs text-emerald-600">Tüm öğrenciler mevcut.</p>
+              </div>
+            );
+            return (
+              <div key={lesson.lessonNo} className="rounded-xl bg-gray-50 px-4 py-3">
+                <div className="text-xs font-600 text-gray-600 mb-2" style={{ fontWeight: 600 }}>{lesson.lessonNo}. Ders <span className="text-gray-400 font-400">· {lesson.teacherName}</span></div>
+                {hasAbsent && (
+                  <div className="mb-1.5">
+                    <span className="text-[10px] font-600 text-red-500 uppercase tracking-wide" style={{ fontWeight: 600 }}>Yok ({lesson.absent.length})</span>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {lesson.absent.map(s => (
+                        <span key={s.id} className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">{s.name}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {hasLate && (
+                  <div>
+                    <span className="text-[10px] font-600 text-amber-500 uppercase tracking-wide" style={{ fontWeight: 600 }}>Geç ({lesson.late.length})</span>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {lesson.late.map(s => (
+                        <span key={s.id} className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{s.name}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function DirectorAttendanceView({ showToast }) {
+  const today = new Date();
+  const jsDay = today.getDay();
+  const todayIndex = jsDay === 0 ? 6 : jsDay - 1;
+
+  const [selectedDay, setSelectedDay] = useState(todayIndex);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [selectedCls, setSelectedCls] = useState(null);
+
+  // Seçili güne ait tarih (bu haftanın)
+  const dateForSelectedDay = useMemo(() => {
+    const d = new Date();
+    const jsDay = d.getDay();
+    const currentDayIndex = jsDay === 0 ? 6 : jsDay - 1;
+    d.setDate(d.getDate() + (selectedDay - currentDayIndex));
+    return d.toISOString().slice(0, 10);
+  }, [selectedDay]);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      setSummary(null);
+      try {
+        const data = await api(`/api/attendance/summary?date=${dateForSelectedDay}`);
+        setSummary(data);
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [dateForSelectedDay]);
+
+  const clsList = summary ? Object.keys(summary).sort() : [];
+
+  return (
+    <div>
+      {/* Gün filtresi */}
+      <div className="flex gap-1.5 mb-5 flex-wrap">
+        {ALL_DAYS.map(day => (
+          <button key={day.index} onClick={() => setSelectedDay(day.index)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-600 transition-all border ${selectedDay === day.index ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'}`}
+            style={{ fontWeight: 600 }}>
+            {day.label}
+            {day.index === todayIndex && <span className="ml-1 text-[10px] opacity-70">Bugün</span>}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center h-40 text-gray-400">Yükleniyor...</div>
+      ) : clsList.length === 0 ? (
+        <div className="card p-10 text-center text-gray-400">
+          <ClipboardList size={32} className="mx-auto mb-2 opacity-30" />
+          <p>Bu gün için yoklama kaydı yok.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+          {clsList.map(cls => {
+            const data = summary[cls];
+            const totalAbsent = data.lessons.reduce((n, l) => n + l.absent.length, 0);
+            const totalLate = data.lessons.reduce((n, l) => n + l.late.length, 0);
+            return (
+              <button key={cls} onClick={() => setSelectedCls(cls)}
+                className="card aspect-square flex flex-col items-center justify-center gap-1.5 hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer p-3">
+                <GraduationCap size={20} className="text-indigo-400" />
+                <span className="text-sm font-700 text-gray-900" style={{ fontWeight: 700 }}>{cls.toUpperCase()}</span>
+                <div className="flex gap-1">
+                  {totalAbsent > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-600" style={{ fontWeight: 600 }}>{totalAbsent} yok</span>
+                  )}
+                  {totalLate > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600 font-600" style={{ fontWeight: 600 }}>{totalLate} geç</span>
+                  )}
+                  {totalAbsent === 0 && totalLate === 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-600 font-600" style={{ fontWeight: 600 }}>Tam</span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {selectedCls && (
+        <AttendanceSummaryModal cls={selectedCls} date={dateForSelectedDay} onClose={() => setSelectedCls(null)} />
+      )}
+    </div>
+  );
+}
+
 function DirectorPanel({ session, showToast }) {
   const [tab, setTab] = useState('teachers');
   const [teachers, setTeachers] = useState([]);
@@ -958,6 +1516,7 @@ function DirectorPanel({ session, showToast }) {
   const [resetTarget, setResetTarget] = useState(null);
   const [expandedTeacherId, setExpandedTeacherId] = useState(null);
   const [historyTarget, setHistoryTarget] = useState(null); // { type: 'teacher'|'student', id, name }
+  const [lessonScheduleTeacher, setLessonScheduleTeacher] = useState(null);
 
   const loadAll = useCallback(async (wk) => {
     setLoading(true);
@@ -1030,7 +1589,7 @@ function DirectorPanel({ session, showToast }) {
   return (
     <div>
       <div className="flex gap-1 mb-6 p-1 bg-gray-100 rounded-xl w-fit flex-wrap">
-        {[['teachers','Öğretmenler'],['students','Öğrenciler']].map(([key,label]) => (
+        {[['teachers','Öğretmenler'],['students','Öğrenciler'],['yoklama','Yoklama']].map(([key,label]) => (
           <button key={key} onClick={() => setTab(key)}
             className={`px-4 py-2 rounded-lg text-sm font-600 transition-all ${tab===key?'bg-white shadow text-gray-900':'text-gray-500 hover:text-gray-700'}`}
             style={{ fontWeight:600 }}>{label}</button>
@@ -1088,6 +1647,9 @@ function DirectorPanel({ session, showToast }) {
                         <div className="flex gap-2">
                           <button className="btn-ghost !px-3 !py-1.5 flex items-center gap-1.5 text-sm text-gray-600" onClick={() => setHistoryTarget({ type: 'teacher', id: t.id, name: t.name })}>
                             <Clock size={13} /> Geçmiş
+                          </button>
+                          <button className="btn-ghost !px-3 !py-1.5 flex items-center gap-1.5 text-sm text-indigo-600 hover:bg-indigo-50" onClick={() => setLessonScheduleTeacher(t)}>
+                            <BookText size={13} /> Ders Programı
                           </button>
                           <button className="btn-primary !px-3 !py-1.5 flex items-center gap-1.5 text-sm" onClick={() => openSlotModal(t)}>
                             <LayoutGrid size={13} /> Tablo
@@ -1202,6 +1764,11 @@ function DirectorPanel({ session, showToast }) {
           }))} />
       )}
 
+      {/* YOKLAMA TAB */}
+      {tab === 'yoklama' && (
+        <DirectorAttendanceView showToast={showToast} />
+      )}
+
       {/* Modals */}
       {showTeacherForm && (
         <TeacherForm initial={editTeacher} onClose={() => { setShowTeacherForm(false); setEditTeacher(null); }}
@@ -1242,6 +1809,9 @@ function DirectorPanel({ session, showToast }) {
             loadAll(weekKey);
             if (selectedTeacherForSlots?.id === templateTeacher.id) await loadTeacherSlots(templateTeacher);
           }} />
+      )}
+      {lessonScheduleTeacher && (
+        <LessonScheduleEditor teacher={lessonScheduleTeacher} showToast={showToast} onClose={() => setLessonScheduleTeacher(null)} />
       )}
       {resetTarget && (
         <ResetPasswordModal target={resetTarget} targetRole={resetTarget.role} onClose={() => setResetTarget(null)} showToast={showToast} />
