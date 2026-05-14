@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import redis from '@/lib/redis';
 import { getSession } from '@/lib/auth';
 import { getWeekKey, getTeacherWeekSlots, slotKey, getAllTeachers } from '@/lib/slots';
-import { ALL_DAYS, slotsForDay, MEZUN_FORBIDDEN_SLOT } from '@/lib/constants';
+import { ALL_DAYS, slotsForDay } from '@/lib/constants';
 
 // GET /api/slots?week=2024-W20&teacherId=xxx
 export async function GET(req) {
@@ -51,7 +51,7 @@ export async function POST(req) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Giriş gerekli' }, { status: 401 });
 
-  const { teacherId, day, slotId, studentId, weekKey: wk, forceOpen, fixed } = await req.json();
+  const { teacherId, day, slotId, studentId, weekKey: wk, forceOpen } = await req.json();
   const weekKey = wk || getWeekKey();
 
   const teacher = await redis.get(`teacher:${teacherId}`);
@@ -93,12 +93,6 @@ export async function POST(req) {
     return NextResponse.json({ error: 'Bu öğrenci bu öğretmenin etütlerine kayıt olamaz' }, { status: 400 });
   }
 
-  // Mezun yasak slot kontrolü (sadece hafta içi)
-  const isWeekend = day >= 5;
-  if (targetStudent.group === 'mezun' && slotId === MEZUN_FORBIDDEN_SLOT && !isWeekend) {
-    return NextResponse.json({ error: 'Mezun öğrenciler hafta içi 16:30-17:00 saatindeki etüde kayıt olamaz' }, { status: 400 });
-  }
-
   // Tüm öğretmenlerin bu haftaki slotlarını çek (çakışma kontrolleri için)
   const allTeachers = await getAllTeachers();
   const allWeekKeys = [];
@@ -110,7 +104,7 @@ export async function POST(req) {
     }
   }
   const pipeline = redis.pipeline();
-  allWeekKeys.forEach(({ key }) => pipeline.get(key));
+  allWeekKeys.forEach(({ key: k }) => pipeline.get(k));
   const existingSlots = await pipeline.exec();
 
   const studentSlots = allWeekKeys
@@ -131,8 +125,6 @@ export async function POST(req) {
     }
   }
 
-  const isFixed = session.role === 'director' && !!fixed;
-
   const bookedData = {
     booked: true,
     disabled: false,
@@ -141,18 +133,9 @@ export async function POST(req) {
     studentCls: targetStudent.cls,
     bookedBy: session.role,
     bookedAt: new Date().toISOString(),
-    fixed: isFixed,
   };
 
   await redis.set(key, bookedData, { ex: 60 * 60 * 24 * 16 });
-
-  if (isFixed) {
-    await redis.set(`fixed:${teacherId}:${day}:${slotId}`, {
-      studentId: targetStudentId,
-      studentName: targetStudent.name,
-      studentCls: targetStudent.cls,
-    });
-  }
 
   return NextResponse.json({ ok: true, slot: bookedData });
 }
@@ -178,13 +161,10 @@ export async function DELETE(req) {
     return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
   }
 
-  // Sabit rezervasyonu da kaldır
-  await redis.del(`fixed:${teacherId}:${day}:${slotId}`);
-
-  // Şablona göre disabled durumunu geri yükle
-  const template = await redis.get(`template:${teacherId}`);
-  const openSlots = template?.[day] || [];
-  const disabled = !openSlots.includes(slotId);
+  // Program'a bakarak disabled durumunu restore et
+  const program = await redis.get(`program:${teacherId}`);
+  const slotEntry = program?.[String(day)]?.[slotId];
+  const disabled = !slotEntry || slotEntry.type !== 'etut';
 
   await redis.set(key, { booked: false, disabled }, { ex: 60 * 60 * 24 * 16 });
 

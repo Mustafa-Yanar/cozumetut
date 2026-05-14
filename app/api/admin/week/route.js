@@ -51,5 +51,34 @@ export async function POST(req) {
     return NextResponse.json({ ok: true, weekKey: current });
   }
 
+  // Tüm slot/template/fixed key'lerini sil, bu haftayı program'dan yeniden init et
+  if (action === 'reinit') {
+    const ids = await redis.smembers('teachers');
+    const deleted = { slot: 0, template: 0, fixed: 0 };
+
+    // Eski key'leri temizle
+    for (const prefix of ['slot:*', 'template:*', 'fixed:*']) {
+      let cursor = 0;
+      do {
+        const [nextCursor, keys] = await redis.scan(cursor, { match: prefix, count: 100 });
+        cursor = parseInt(nextCursor);
+        if (keys.length > 0) {
+          await redis.del(...keys);
+          if (prefix.startsWith('slot')) deleted.slot += keys.length;
+          else if (prefix.startsWith('template')) deleted.template += keys.length;
+          else deleted.fixed += keys.length;
+        }
+      } while (cursor !== 0);
+    }
+
+    // Bu haftayı program'dan yeniden oluştur
+    const weekKey = getWeekKey();
+    for (const tid of (ids || [])) {
+      await initWeekForTeacher(tid, weekKey);
+    }
+
+    return NextResponse.json({ ok: true, weekKey, deleted, teachers: ids?.length || 0 });
+  }
+
   return NextResponse.json({ error: 'Geçersiz işlem' }, { status: 400 });
 }

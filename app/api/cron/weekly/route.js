@@ -70,28 +70,8 @@ export async function GET(req) {
   for (const tid of ids) {
     const teacher = await redis.get(`teacher:${tid}`);
     if (!teacher) continue;
+    // initWeekForTeacher program'daki sabit rezervasyonları da uygular
     await initWeekForTeacher(tid, nextWeek);
-
-    // Sabit rezervasyonları yeni haftaya uygula
-    for (const day of ALL_DAYS) {
-      for (const slot of slotsForDay(day.index)) {
-        const fixedData = await redis.get(`fixed:${tid}:${day.index}:${slot.id}`);
-        if (!fixedData) continue;
-        const k = slotKey(nextWeek, tid, day.index, slot.id);
-        const existing = await redis.get(k);
-        if (existing && existing.booked) continue; // zaten doluysa dokunma
-        await redis.set(k, {
-          booked: true,
-          disabled: false,
-          studentId: fixedData.studentId,
-          studentName: fixedData.studentName,
-          studentCls: fixedData.studentCls,
-          bookedBy: 'director',
-          bookedAt: new Date().toISOString(),
-          fixed: true,
-        }, { ex: 60 * 60 * 24 * 16 });
-      }
-    }
   }
 
   await redis.set('current_week', nextWeek);
