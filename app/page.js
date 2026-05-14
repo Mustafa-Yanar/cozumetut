@@ -1264,7 +1264,8 @@ function StudentPanel({ session, showToast }) {
   const available = useMemo(() => {
     return allSlots.filter(s => {
       if (s.booked || s.disabled) return false;
-      if (s.allowedGroups?.length > 0 && !s.allowedGroups.includes(session.group)) return false;
+      if (!s.allowedGroups || s.allowedGroups.length === 0) return false;
+      if (!s.allowedGroups.includes(session.group)) return false;
       // Sınıfa göre izin verilen branşlar
       if (!studentAllowedBranches.includes(s.branch)) return false;
       if (myBookings.some(b => b.branch === s.branch)) return false;

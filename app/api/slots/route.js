@@ -57,6 +57,11 @@ export async function POST(req) {
   const teacher = await redis.get(`teacher:${teacherId}`);
   if (!teacher) return NextResponse.json({ error: 'Öğretmen bulunamadı' }, { status: 404 });
 
+  // Etiketsiz öğretmende rezervasyon yapılamaz
+  if (!teacher.allowedGroups || teacher.allowedGroups.length === 0) {
+    return NextResponse.json({ error: 'Bu öğretmenin grup etiketi tanımlanmamış, rezervasyon yapılamaz' }, { status: 400 });
+  }
+
   // Slot kapalı mı kontrol et
   const key = slotKey(weekKey, teacherId, day, slotId);
   const existing = await redis.get(key);
