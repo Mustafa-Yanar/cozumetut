@@ -475,18 +475,34 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
     const entry = getEntry(dayIndex, slotId);
     const type = entry?.type || null;
     const [studentSearch, setStudentSearch] = useState('');
+    const [clsError, setClsError] = useState(false);
+
+    function handleTypeChange(val) {
+      setClsError(false);
+      setEntry(dayIndex, slotId, { type: val, ...(val === 'ders' ? { cls: entry?.cls || '' } : { studentId: entry?.studentId || '', studentName: entry?.studentName || '', studentCls: entry?.studentCls || '', fixed: entry?.fixed || false }) });
+    }
+
+    function handleClsChange(cls) {
+      setClsError(false);
+      setEntry(dayIndex, slotId, { type: 'ders', cls });
+    }
+
+    function handleSaveClick() {
+      if (type === 'ders' && !entry?.cls) {
+        setClsError(true);
+        return;
+      }
+      setActiveCell(null);
+    }
 
     return (
       <div className="p-4 border-t border-gray-100 bg-gray-50">
         <div className="text-xs font-600 text-gray-500 mb-2" style={{ fontWeight: 600 }}>
           {ALL_DAYS.find(d => d.index === dayIndex)?.label} – {slotsForDay(dayIndex).find(s => s.id === slotId)?.label}
         </div>
-        {/* Tip seçimi */}
         <div className="flex gap-2 mb-3">
           {[{val: 'ders', label: 'Ders'}, {val: 'etut', label: 'Etüt'}].map(opt => (
-            <button key={String(opt.val)} onClick={() => {
-              setEntry(dayIndex, slotId, { type: opt.val });
-            }}
+            <button key={opt.val} onClick={() => handleTypeChange(opt.val)}
               className={`px-3 py-1.5 rounded-lg text-xs font-600 border transition-all ${type === opt.val ? (opt.val === 'ders' ? 'bg-blue-600 text-white border-blue-600' : 'bg-emerald-600 text-white border-emerald-600') : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}
               style={{ fontWeight: 600 }}>
               {opt.label}
@@ -495,18 +511,19 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
         </div>
 
         {type === 'ders' && (
-          <div>
+          <div className="mb-3">
             <label className="block text-xs text-gray-500 mb-1">Sınıf</label>
-            <select value={entry?.cls || ''} onChange={e => setEntry(dayIndex, slotId, { type: 'ders', cls: e.target.value })}
-              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300">
+            <select value={entry?.cls || ''} onChange={e => handleClsChange(e.target.value)}
+              className={`w-full text-xs border rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 ${clsError ? 'border-red-400' : 'border-gray-200'}`}>
               <option value="">Sınıf seçin</option>
-              {allClasses.map(cls => <option key={cls} value={cls}>{cls.toUpperCase()}</option>)}
+              {allClasses.map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
             </select>
+            {clsError && <p className="text-xs text-red-500 mt-1">Sınıf seçilmeden ders eklenemez.</p>}
           </div>
         )}
 
         {type === 'etut' && (
-          <div className="space-y-2">
+          <div className="space-y-2 mb-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Öğrenci (boş bırakılırsa açık slot)</label>
               <input
@@ -548,6 +565,14 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
               </label>
             )}
           </div>
+        )}
+
+        {type && (
+          <button onClick={handleSaveClick}
+            className="px-4 py-1.5 rounded-lg text-xs font-600 bg-indigo-600 text-white border border-indigo-600 hover:bg-indigo-700 transition-all"
+            style={{ fontWeight: 600 }}>
+            Kaydet
+          </button>
         )}
       </div>
     );
@@ -619,19 +644,17 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
                       <button className={`w-full ${cellClass}`}
                         onClick={() => {
                           if (isActive) {
-                            // Tekrar tıklayınca değişiklikleri geri al
+                            // Tekrar tıklayınca değişiklikleri geri al (kaydetmemiş sayılır)
                             const orig = activeCellOriginal.current;
-                            if (orig !== undefined) {
-                              if (orig === null) {
-                                clearEntry(day.index, slot.id);
-                              } else {
-                                setEntry(day.index, slot.id, orig);
-                              }
+                            if (orig === null) {
+                              clearEntry(day.index, slot.id);
+                            } else if (orig !== undefined) {
+                              setEntry(day.index, slot.id, orig);
                             }
                             activeCellOriginal.current = null;
                             setActiveCell(null);
                           } else {
-                            activeCellOriginal.current = getEntry(day.index, slot.id);
+                            activeCellOriginal.current = getEntry(day.index, slot.id) ?? null;
                             setActiveCell({ dayIndex: day.index, slotId: slot.id });
                           }
                         }}>
