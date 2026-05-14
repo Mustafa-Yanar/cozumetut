@@ -414,7 +414,6 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
   const [saving, setSaving] = useState(false);
   // activeCell: { dayIndex, slotId } — hangi hücre seçili
   const [activeCell, setActiveCell] = useState(null);
-  const activeCellOriginal = React.useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -470,27 +469,24 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
     ? students.filter(s => !teacher.allowedGroups?.length || teacher.allowedGroups.includes(s.group))
     : [];
 
-  // Aktif hücre için tip/değer seçici
+  // Aktif hücre için tip/değer seçici — tüm state lokal, sadece Kaydet'te setEntry çağrılır
   function CellEditor({ dayIndex, slotId }) {
-    const entry = getEntry(dayIndex, slotId);
-    const type = entry?.type || null;
+    const existing = getEntry(dayIndex, slotId);
+    const [type, setType] = useState(existing?.type || null);
+    const [cls, setCls] = useState(existing?.cls || '');
+    const [studentId, setStudentId] = useState(existing?.studentId || '');
+    const [studentName, setStudentName] = useState(existing?.studentName || '');
+    const [studentCls, setStudentCls] = useState(existing?.studentCls || '');
+    const [fixed, setFixed] = useState(existing?.fixed || false);
     const [studentSearch, setStudentSearch] = useState('');
     const [clsError, setClsError] = useState(false);
 
-    function handleTypeChange(val) {
-      setClsError(false);
-      setEntry(dayIndex, slotId, { type: val, ...(val === 'ders' ? { cls: entry?.cls || '' } : { studentId: entry?.studentId || '', studentName: entry?.studentName || '', studentCls: entry?.studentCls || '', fixed: entry?.fixed || false }) });
-    }
-
-    function handleClsChange(cls) {
-      setClsError(false);
-      setEntry(dayIndex, slotId, { type: 'ders', cls });
-    }
-
     function handleSaveClick() {
-      if (type === 'ders' && !entry?.cls) {
-        setClsError(true);
-        return;
+      if (type === 'ders') {
+        if (!cls) { setClsError(true); return; }
+        setEntry(dayIndex, slotId, { type: 'ders', cls });
+      } else if (type === 'etut') {
+        setEntry(dayIndex, slotId, { type: 'etut', studentId, studentName, studentCls, fixed });
       }
       setActiveCell(null);
     }
@@ -502,7 +498,7 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
         </div>
         <div className="flex gap-2 mb-3">
           {[{val: 'ders', label: 'Ders'}, {val: 'etut', label: 'Etüt'}].map(opt => (
-            <button key={opt.val} onClick={() => handleTypeChange(opt.val)}
+            <button key={opt.val} onClick={() => { setType(opt.val); setClsError(false); }}
               className={`px-3 py-1.5 rounded-lg text-xs font-600 border transition-all ${type === opt.val ? (opt.val === 'ders' ? 'bg-blue-600 text-white border-blue-600' : 'bg-emerald-600 text-white border-emerald-600') : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}
               style={{ fontWeight: 600 }}>
               {opt.label}
@@ -513,7 +509,7 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
         {type === 'ders' && (
           <div className="mb-3">
             <label className="block text-xs text-gray-500 mb-1">Sınıf</label>
-            <select value={entry?.cls || ''} onChange={e => handleClsChange(e.target.value)}
+            <select value={cls} onChange={e => { setCls(e.target.value); setClsError(false); }}
               className={`w-full text-xs border rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 ${clsError ? 'border-red-400' : 'border-gray-200'}`}>
               <option value="">Sınıf seçin</option>
               {allClasses.map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
@@ -535,9 +531,9 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
               />
               <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg bg-white">
                 <button
-                  onClick={() => { setEntry(dayIndex, slotId, { type: 'etut', studentId: '', studentName: '', studentCls: '', fixed: false }); setStudentSearch(''); }}
-                  className={`w-full text-left px-3 py-2 text-xs transition-colors ${!entry?.studentId ? 'bg-emerald-50 text-emerald-700 font-600' : 'text-gray-400 hover:bg-gray-50'}`}
-                  style={{ fontWeight: !entry?.studentId ? 600 : 400 }}>
+                  onClick={() => { setStudentId(''); setStudentName(''); setStudentCls(''); setFixed(false); setStudentSearch(''); }}
+                  className={`w-full text-left px-3 py-2 text-xs transition-colors ${!studentId ? 'bg-emerald-50 text-emerald-700 font-600' : 'text-gray-400 hover:bg-gray-50'}`}
+                  style={{ fontWeight: !studentId ? 600 : 400 }}>
                   — Açık slot —
                 </button>
                 {allowedStudents
@@ -548,18 +544,18 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
                   .slice(0, 20)
                   .map(s => (
                     <button key={s.id}
-                      onClick={() => { setEntry(dayIndex, slotId, { type: 'etut', studentId: s.id, studentName: s.name, studentCls: s.cls, fixed: entry?.fixed || false }); setStudentSearch(''); }}
-                      className={`w-full text-left px-3 py-2 text-xs transition-colors ${entry?.studentId === s.id ? 'bg-emerald-50 text-emerald-700 font-600' : 'hover:bg-gray-50 text-gray-700'}`}
-                      style={{ fontWeight: entry?.studentId === s.id ? 600 : 400 }}>
+                      onClick={() => { setStudentId(s.id); setStudentName(s.name); setStudentCls(s.cls); setStudentSearch(''); }}
+                      className={`w-full text-left px-3 py-2 text-xs transition-colors ${studentId === s.id ? 'bg-emerald-50 text-emerald-700 font-600' : 'hover:bg-gray-50 text-gray-700'}`}
+                      style={{ fontWeight: studentId === s.id ? 600 : 400 }}>
                       <span className="font-600" style={{ fontWeight: 600 }}>{s.name}</span>
                       <span className="text-gray-400 ml-1.5">{classLabel(s.cls)}</span>
                     </button>
                   ))}
               </div>
             </div>
-            {entry?.studentId && (
+            {studentId && (
               <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" checked={!!entry?.fixed} onChange={e => setEntry(dayIndex, slotId, { ...entry, fixed: e.target.checked })}
+                <input type="checkbox" checked={fixed} onChange={e => setFixed(e.target.checked)}
                   className="w-4 h-4 rounded accent-indigo-600" />
                 <span className="text-xs text-gray-700">Sabit rezervasyon (her hafta tekrar)</span>
               </label>
@@ -642,26 +638,7 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
                   return (
                     <td key={day.index} className="py-0.5 px-0.5">
                       <button className={`w-full ${cellClass}`}
-                        onClick={() => {
-                          // Önce açık slotu her durumda restore et
-                          if (activeCell) {
-                            const orig = activeCellOriginal.current;
-                            if (orig === null) {
-                              clearEntry(activeCell.dayIndex, activeCell.slotId);
-                            } else if (orig !== undefined) {
-                              setEntry(activeCell.dayIndex, activeCell.slotId, orig);
-                            }
-                            activeCellOriginal.current = null;
-                          }
-                          if (isActive) {
-                            // Aynı slota tekrar tıkladı — kapat
-                            setActiveCell(null);
-                          } else {
-                            // Farklı slota tıkladı — onu aç
-                            activeCellOriginal.current = getEntry(day.index, slot.id) ?? null;
-                            setActiveCell({ dayIndex: day.index, slotId: slot.id });
-                          }
-                        }}>
+                        onClick={() => setActiveCell(isActive ? null : { dayIndex: day.index, slotId: slot.id })}>
                         {cellContent}
                       </button>
                     </td>
