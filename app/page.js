@@ -643,17 +643,21 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
                     <td key={day.index} className="py-0.5 px-0.5">
                       <button className={`w-full ${cellClass}`}
                         onClick={() => {
-                          if (isActive) {
-                            // Tekrar tıklayınca değişiklikleri geri al (kaydetmemiş sayılır)
+                          // Önce açık slotu her durumda restore et
+                          if (activeCell) {
                             const orig = activeCellOriginal.current;
                             if (orig === null) {
-                              clearEntry(day.index, slot.id);
+                              clearEntry(activeCell.dayIndex, activeCell.slotId);
                             } else if (orig !== undefined) {
-                              setEntry(day.index, slot.id, orig);
+                              setEntry(activeCell.dayIndex, activeCell.slotId, orig);
                             }
                             activeCellOriginal.current = null;
+                          }
+                          if (isActive) {
+                            // Aynı slota tekrar tıkladı — kapat
                             setActiveCell(null);
                           } else {
+                            // Farklı slota tıkladı — onu aç
                             activeCellOriginal.current = getEntry(day.index, slot.id) ?? null;
                             setActiveCell({ dayIndex: day.index, slotId: slot.id });
                           }
