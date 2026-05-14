@@ -171,7 +171,7 @@ function getAdjacentWeek(weekKey, delta) {
 }
 
 // ─── SLOT GRID ─────────────────────────────────────────────────────────────────
-function SlotGrid({ grid, teacher, weekKey, session, students, onBook, onCancel, hideEmptyDays }) {
+function SlotGrid({ grid, program, teacher, weekKey, session, students, onBook, onCancel, hideEmptyDays }) {
   const [bookingSlot, setBookingSlot] = useState(null);
   const [searchQ, setSearchQ] = useState('');
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -190,9 +190,18 @@ function SlotGrid({ grid, teacher, weekKey, session, students, onBook, onCancel,
     }).slice(0, 20);
   }, [students, searchQ, teacher.allowedGroups]);
 
-  // hideEmptyDays=true ise hiç etüt alınmamış günleri gizle
+  // hideEmptyDays=true ise müdürün hiç slot tanımlamamış olduğu günleri gizle
   const visibleDays = useMemo(() => {
-    if (!hideEmptyDays || !grid) return ALL_DAYS;
+    if (!hideEmptyDays) return ALL_DAYS;
+    // program varsa: o gün herhangi bir slot tipi tanımlıysa göster
+    if (program && Object.keys(program).length > 0) {
+      return ALL_DAYS.filter(day => {
+        const dayProg = program[String(day.index)] || {};
+        return Object.values(dayProg).some(entry => entry && entry.type);
+      });
+    }
+    // program yoksa grid'e bak: en az bir disabled olmayan slot varsa göster
+    if (!grid) return ALL_DAYS;
     return ALL_DAYS.filter(day => {
       const daySlots = slotsForDay(day.index);
       return daySlots.some((_, slotIdx) => {
@@ -200,7 +209,7 @@ function SlotGrid({ grid, teacher, weekKey, session, students, onBook, onCancel,
         return sd && !sd.disabled;
       });
     });
-  }, [grid, hideEmptyDays]);
+  }, [grid, program, hideEmptyDays]);
 
   const handleCellClick = (dayIndex, slotIdx, slotData, isForceOpen = false) => {
     if (slotData.booked) return;
@@ -263,7 +272,8 @@ function SlotGrid({ grid, teacher, weekKey, session, students, onBook, onCancel,
                       const slot = slots[rowIdx];
                       if (!slot) return <td key={day.index} className="py-1 px-1"><div className="rounded-lg py-2 bg-gray-50 border border-gray-100 text-center text-gray-200 text-xs">—</div></td>;
                       const slotData = (grid && grid[day.index] && grid[day.index][rowIdx]) || { booked: false, disabled: true };
-                      return <SlotCell key={day.index} slotData={slotData} slot={slot} dayIndex={day.index} slotIdx={rowIdx} session={session} teacher={teacher} onCellClick={handleCellClick} onCancel={onCancel} weekKey={weekKey} />;
+                      const progEntry = program?.[String(day.index)]?.[slot.id];
+                      return <SlotCell key={day.index} slotData={slotData} progEntry={progEntry} slot={slot} dayIndex={day.index} slotIdx={rowIdx} session={session} teacher={teacher} onCellClick={handleCellClick} onCancel={onCancel} weekKey={weekKey} />;
                     })}
                   </tr>
                 );
@@ -326,19 +336,23 @@ function SlotGrid({ grid, teacher, weekKey, session, students, onBook, onCancel,
   );
 }
 
-function SlotCell({ slotData, slot, dayIndex, slotIdx, session, teacher, onCellClick, onCancel, weekKey }) {
-  const isForbidden = false;
+function SlotCell({ slotData, progEntry, slot, dayIndex, slotIdx, session, teacher, onCellClick, onCancel, weekKey }) {
   const isDirector = session.role === 'director';
-
-  if (isForbidden) {
-    return (
-      <td className="py-1 px-1">
-        <div className="rounded-lg py-2 px-1 text-center text-xs text-gray-200 bg-gray-50 border border-dashed border-gray-100">—</div>
-      </td>
-    );
-  }
+  const isLesson = progEntry?.type === 'ders';
 
   if (slotData.disabled) {
+    // Ders slotu: sınıf bilgisini göster
+    if (isLesson) {
+      const cls = progEntry.cls ? classLabel(progEntry.cls) : '—';
+      return (
+        <td className="py-1 px-1">
+          <div className="rounded-lg py-1.5 px-1 text-center bg-blue-50 border border-blue-100 select-none">
+            <div className="text-[10px] font-600 text-blue-700 truncate" style={{ fontWeight: 600 }}>{cls}</div>
+            <div className="text-[9px] text-blue-400">Ders</div>
+          </div>
+        </td>
+      );
+    }
     // Müdür: kapalı slotu bu hafta için açıp rezerve edebilir
     if (isDirector) {
       return (
@@ -981,21 +995,25 @@ function TeacherAttendancePanel({ session, weekKey, showToast }) {
 function TeacherPanel({ session, showToast }) {
   const [weekKey, setWeekKey] = useState(getWeekKey());
   const [slots, setSlots] = useState(null);
+  const [program, setProgram] = useState({});
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('rezervasyon'); // 'rezervasyon' | 'yoklama'
+  const [viewMode, setViewMode] = useState('table'); // 'table' | 'list'
 
   const loadData = useCallback(async (wk) => {
     setLoading(true);
     try {
       const resolvedWeek = wk || getWeekKey();
       if (!wk) setWeekKey(resolvedWeek);
-      const [slotsData, stuData] = await Promise.all([
+      const [slotsData, stuData, progData] = await Promise.all([
         api(`/api/slots?teacherId=${session.id}&week=${resolvedWeek}`),
         api('/api/students'),
+        api(`/api/program?teacherId=${session.id}`),
       ]);
       setSlots(slotsData.grid);
       setStudents(stuData);
+      setProgram(progData || {});
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
@@ -1027,6 +1045,38 @@ function TeacherPanel({ session, showToast }) {
     } catch (err) { showToast(err.message, 'error'); }
   };
 
+  const listColorMap = {
+    student: { bg: 'bg-indigo-50', border: 'border-indigo-100', day: 'text-indigo-700', time: 'text-indigo-400', div: 'bg-indigo-200', badge: 'bg-indigo-100 text-indigo-500', label: 'Öğrenci' },
+    teacher: { bg: 'bg-emerald-50', border: 'border-emerald-100', day: 'text-emerald-700', time: 'text-emerald-400', div: 'bg-emerald-200', badge: 'bg-emerald-100 text-emerald-600', label: 'Öğretmen' },
+    director: { bg: 'bg-amber-50', border: 'border-amber-100', day: 'text-amber-700', time: 'text-amber-400', div: 'bg-amber-200', badge: 'bg-amber-100 text-amber-600', label: 'Müdür' },
+  };
+
+  const bookedList = useMemo(() => {
+    if (!slots) return [];
+    const items = [];
+    ALL_DAYS.forEach(day => {
+      const daySlots = slotsForDay(day.index);
+      daySlots.forEach((slot, slotIdx) => {
+        const slotData = slots[day.index]?.[slotIdx];
+        if (slotData?.booked) {
+          items.push({
+            dayIndex: day.index,
+            dayLabel: day.label,
+            slotId: slot.id,
+            slotLabel: slot.label,
+            slotIdx,
+            studentName: slotData.studentName,
+            studentCls: (slotData.studentCls || '').toUpperCase(),
+            studentId: slotData.studentId,
+            bookedBy: slotData.bookedBy || 'student',
+            fixed: !!slotData.fixed,
+          });
+        }
+      });
+    });
+    return items;
+  }, [slots]);
+
   if (loading) return <div className="flex items-center justify-center h-64 text-gray-400">Yükleniyor...</div>;
 
   return (
@@ -1049,13 +1099,32 @@ function TeacherPanel({ session, showToast }) {
 
       {activeTab === 'rezervasyon' && (
         <>
-          <div className="flex items-center justify-end mb-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden shrink-0">
+              <button
+                onClick={() => setViewMode('table')}
+                className={`px-3 py-1.5 text-xs flex items-center gap-1 transition-colors ${viewMode === 'table' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                <LayoutGrid size={13} /> Tablo
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`px-3 py-1.5 text-xs flex items-center gap-1 transition-colors ${viewMode === 'list' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                <List size={13} /> Liste
+              </button>
+            </div>
             <WeekNav weekKey={weekKey} onPrev={() => handleWeekChange(getAdjacentWeek(weekKey,-1))} onNext={() => handleWeekChange(getAdjacentWeek(weekKey,1))} />
           </div>
-          <div className="card p-4">
-            <SlotGrid grid={slots} teacher={{ id: session.id, name: session.name, branch: session.branch, allowedGroups: session.allowedGroups }} weekKey={weekKey} session={session} students={students} onBook={handleBook} onCancel={handleCancel} hideEmptyDays />
-          </div>
-          <p className="text-xs text-gray-400 mt-3 text-center">✕ = kapalı saat &nbsp;·&nbsp; + = rezervasyon yapılabilir</p>
+          {viewMode === 'table' ? (
+            <>
+              <div className="card p-4">
+                <SlotGrid grid={slots} program={program} teacher={{ id: session.id, name: session.name, branch: session.branch, allowedGroups: session.allowedGroups }} weekKey={weekKey} session={session} students={students} onBook={handleBook} onCancel={handleCancel} hideEmptyDays />
+              </div>
+              <p className="text-xs text-gray-400 mt-3 text-center">✕ = kapalı saat &nbsp;·&nbsp; + = rezervasyon yapılabilir</p>
+            </>
+          ) : (
+            <TeacherBookingsList bookedList={bookedList} listColorMap={listColorMap}
+              onCancel={item => handleCancel({ teacherId: session.id, day: item.dayIndex, slotId: item.slotId })} />
+          )}
         </>
       )}
 
