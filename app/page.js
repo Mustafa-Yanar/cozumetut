@@ -1724,15 +1724,16 @@ function HistoryModal({ target, onClose, currentWeekKey, currentEntries }) {
     const w = window.open('', '_blank');
     w.document.write(`<html><head><title>${target.name} – Etüt Geçmişi</title>
     <style>
-      body { font-family: Arial, sans-serif; font-size: 13px; color: #111; padding: 24px; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      * { print-color-adjust: exact !important; -webkit-print-color-adjust: exact !important; color-adjust: exact !important; }
+      body { font-family: Arial, sans-serif; font-size: 13px; color: #111; padding: 24px; }
       h1 { font-size: 18px; margin-bottom: 4px; }
       .sub { color: #666; font-size: 12px; margin-bottom: 20px; }
       .week { margin-bottom: 20px; }
-      .week-title { font-size: 14px; font-weight: bold; background: #f3f4f6 !important; padding: 6px 10px; border-radius: 6px; margin-bottom: 8px; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-      .day-title { font-size: 12px; font-weight: bold; color: #4338ca !important; margin: 8px 0 4px 8px; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-      .entry { display: flex; justify-content: space-between; padding: 5px 8px 5px 16px; border-left: 4px solid #6366f1 !important; margin-bottom: 3px; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .week-title { font-size: 14px; font-weight: bold; border-top: 3px solid #6366f1; border-bottom: 1px solid #c7d2fe; padding: 6px 10px; margin-bottom: 8px; color: #3730a3; }
+      .day-title { font-size: 12px; font-weight: bold; color: #4338ca; margin: 8px 0 4px 8px; }
+      .entry { display: flex; justify-content: space-between; padding: 5px 8px 5px 12px; border-left: 4px solid #6366f1; margin-bottom: 3px; }
       .entry-left { color: #333; }
-      .entry-right { color: #666; font-size: 11px; }
+      .entry-right { color: #555; font-size: 11px; }
     </style></head><body>`);
     w.document.write(`<h1>${target.name}</h1><div class="sub">Etüt Geçmişi</div>`);
     allWeeks.forEach(week => {
