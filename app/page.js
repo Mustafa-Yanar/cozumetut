@@ -180,9 +180,9 @@ function SlotGrid({ grid, program, teacher, weekKey, session, students, onBook, 
   const filteredStudents = useMemo(() => {
     if (!students) return [];
     const q = searchQ.toLowerCase();
-    const allowedGroups = teacher.allowedGroups;
+    const allowedGroups = teacher.allowedGroups || [];
     return students.filter(s => {
-      if (allowedGroups && allowedGroups.length > 0 && !allowedGroups.includes(s.group)) return false;
+      if (allowedGroups.length === 0 || !allowedGroups.includes(s.group)) return false;
       if (!q) return true;
       return s.name.toLowerCase().includes(q) ||
         s.cls.toLowerCase().includes(q) ||
@@ -343,7 +343,7 @@ function SlotCell({ slotData, progEntry, slot, dayIndex, slotIdx, session, teach
   if (slotData.disabled) {
     // Ders slotu: sınıf bilgisini göster
     if (isLesson) {
-      const cls = progEntry.cls ? classLabel(progEntry.cls) : '—';
+      const cls = progEntry.cls ? progEntry.cls.toUpperCase() : '—';
       return (
         <td className="py-1 px-1">
           <div className="rounded-lg py-1.5 px-1 text-center bg-blue-50 border border-blue-100 select-none">
@@ -418,6 +418,104 @@ function SlotCell({ slotData, progEntry, slot, dayIndex, slotIdx, session, teach
         +
       </button>
     </td>
+  );
+}
+
+// ─── DERS PROGRAMI EDİTÖRÜ (Yoklama için) ─────────────────────────────────────
+function LessonScheduleEditor({ teacher, onClose, showToast }) {
+  // schedule[dayIndex][lessonNo] = cls | null
+  const [schedule, setSchedule] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api(`/api/lesson-schedule?teacherId=${teacher.id}`)
+      .then(d => setSchedule(d || {}))
+      .catch(() => setSchedule({}))
+      .finally(() => setLoading(false));
+  }, [teacher.id]);
+
+  function setCell(dayIndex, lessonNo, value) {
+    setSchedule(prev => {
+      const day = { ...(prev[String(dayIndex)] || {}) };
+      if (value) day[String(lessonNo)] = value;
+      else delete day[String(lessonNo)];
+      return { ...prev, [String(dayIndex)]: day };
+    });
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await api('/api/lesson-schedule', { method: 'POST', body: JSON.stringify({ teacherId: teacher.id, schedule }) });
+      showToast('Ders programı kaydedildi');
+      onClose();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const allClasses = Object.values(STUDENT_GROUPS).flatMap(g => g.classes);
+
+  return (
+    <Modal title={`Ders Programı — ${teacher.name}`} onClose={onClose} wide>
+      {loading ? (
+        <div className="flex items-center justify-center h-32 text-gray-400">Yükleniyor...</div>
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-separate" style={{ borderSpacing: 0 }}>
+              <thead>
+                <tr>
+                  <th className="text-left py-2 px-2 text-gray-400 font-600 w-16" style={{ fontWeight: 600 }}>Ders</th>
+                  {ALL_DAYS.map(day => (
+                    <th key={day.index} className={`text-center py-2 px-1 font-600 ${day.weekend ? 'text-indigo-500' : 'text-gray-600'}`} style={{ fontWeight: 600 }}>
+                      {day.short}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 8 }, (_, i) => i + 1).map(lessonNo => {
+                  const isWeekdayOnly = lessonNo > 6;
+                  return (
+                    <tr key={lessonNo} className="border-t border-gray-50">
+                      <td className="py-1.5 px-2 text-gray-500 font-500 whitespace-nowrap" style={{ fontWeight: 500 }}>{lessonNo}. Ders</td>
+                      {ALL_DAYS.map(day => {
+                        if (isWeekdayOnly && day.index >= 5) {
+                          return <td key={day.index} className="py-1 px-1"><div className="rounded py-1 text-center text-gray-200 bg-gray-50 text-[10px]">—</div></td>;
+                        }
+                        const val = schedule?.[String(day.index)]?.[String(lessonNo)] || '';
+                        return (
+                          <td key={day.index} className="py-1 px-1">
+                            <select
+                              value={val}
+                              onChange={e => setCell(day.index, lessonNo, e.target.value)}
+                              className="w-full rounded border border-gray-200 bg-white text-[11px] py-1 px-1 text-gray-700 focus:border-indigo-400 focus:outline-none"
+                            >
+                              <option value="">—</option>
+                              {allClasses.map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
+                            </select>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex gap-3 mt-5">
+            <button className="btn-primary flex-1" onClick={handleSave} disabled={saving}>
+              {saving ? 'Kaydediliyor…' : 'Kaydet'}
+            </button>
+            <button className="btn-ghost" onClick={onClose}>İptal</button>
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }
 
@@ -1602,6 +1700,7 @@ function DirectorPanel({ session, showToast }) {
   const [selectedTeacherForSlots, setSelectedTeacherForSlots] = useState(null);
   const [teacherSlots, setTeacherSlots] = useState(null);
   const [programTeacher, setProgramTeacher] = useState(null);
+  const [lessonScheduleTeacher, setLessonScheduleTeacher] = useState(null);
   const [resetTarget, setResetTarget] = useState(null);
   const [expandedTeacherId, setExpandedTeacherId] = useState(null);
   const [historyTarget, setHistoryTarget] = useState(null); // { type: 'teacher'|'student', id, name }
@@ -1728,6 +1827,9 @@ function DirectorPanel({ session, showToast }) {
                         <div className="flex gap-2">
                           <button className="btn-ghost !px-3 !py-1.5 flex items-center gap-1.5 text-sm text-gray-600" onClick={() => setHistoryTarget({ type: 'teacher', id: t.id, name: t.name })}>
                             <Clock size={13} /> Geçmiş
+                          </button>
+                          <button className="btn-ghost !px-3 !py-1.5 flex items-center gap-1.5 text-sm text-indigo-600" onClick={() => setLessonScheduleTeacher(t)}>
+                            <ClipboardList size={13} /> Ders Programı
                           </button>
                           <button className="btn-primary !px-3 !py-1.5 flex items-center gap-1.5 text-sm" onClick={() => setProgramTeacher(t)}>
                             <LayoutGrid size={13} /> Program
@@ -1871,6 +1973,10 @@ function DirectorPanel({ session, showToast }) {
       {programTeacher && (
         <ProgramEditor teacher={programTeacher} students={students} showToast={showToast}
           onClose={() => { setProgramTeacher(null); loadAll(weekKey); }} />
+      )}
+      {lessonScheduleTeacher && (
+        <LessonScheduleEditor teacher={lessonScheduleTeacher} showToast={showToast}
+          onClose={() => setLessonScheduleTeacher(null)} />
       )}
       {resetTarget && (
         <ResetPasswordModal target={resetTarget} targetRole={resetTarget.role} onClose={() => setResetTarget(null)} showToast={showToast} />
