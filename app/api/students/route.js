@@ -84,7 +84,20 @@ export async function DELETE(req) {
     return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
   }
 
-  const { id } = await req.json();
+  const { id, ids } = await req.json();
+
+  // Toplu silme
+  if (ids && Array.isArray(ids)) {
+    const pipeline = redis.pipeline();
+    ids.forEach(sid => {
+      pipeline.del(`student:${sid}`);
+      pipeline.srem('students', sid);
+    });
+    await pipeline.exec();
+    return NextResponse.json({ ok: true, deleted: ids.length });
+  }
+
+  // Tekil silme
   await redis.del(`student:${id}`);
   await redis.srem('students', id);
   return NextResponse.json({ ok: true });

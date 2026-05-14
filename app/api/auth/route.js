@@ -10,7 +10,7 @@ export async function GET() {
 }
 
 export async function POST(req) {
-  const { action, username, password } = await req.json();
+  const { action, username, password, newPassword, targetId, targetRole, name } = await req.json();
 
   if (action === 'login') {
     // Try director
@@ -59,9 +59,21 @@ export async function POST(req) {
     const exists = await redis.exists('director');
     if (exists) return NextResponse.json({ error: 'Müdür zaten kayıtlı' }, { status: 400 });
     const hash = await bcrypt.hash(password, 10);
-    await redis.set('director', { username, passwordHash: hash, name: 'Müdür' });
+    const directorName = name || 'Müdür';
+    await redis.set('director', { username, passwordHash: hash, name: directorName });
     const res = NextResponse.json({ ok: true });
-    await setSession(res, { role: 'director', id: 'director', name: 'Müdür' });
+    await setSession(res, { role: 'director', id: 'director', name: directorName });
+    return res;
+  }
+
+  if (action === 'update_director_name') {
+    const session = await getSession();
+    if (!session || session.role !== 'director') return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
+    const director = await redis.get('director');
+    if (!director) return NextResponse.json({ error: 'Müdür bulunamadı' }, { status: 404 });
+    await redis.set('director', { ...director, name });
+    const res = NextResponse.json({ ok: true });
+    await setSession(res, { role: 'director', id: 'director', name });
     return res;
   }
 
@@ -69,6 +81,58 @@ export async function POST(req) {
     const res = NextResponse.json({ ok: true });
     await clearSession(res);
     return res;
+  }
+
+  // Kendi şifresini değiştir (mevcut şifre doğrulanır)
+  if (action === 'change_password') {
+    const session = await getSession();
+    if (!session) return NextResponse.json({ error: 'Giriş gerekli' }, { status: 401 });
+
+    if (session.role === 'teacher') {
+      const t = await redis.get(`teacher:${session.id}`);
+      if (!t) return NextResponse.json({ error: 'Kullanıcı bulunamadı' }, { status: 404 });
+      const ok = await bcrypt.compare(password, t.passwordHash);
+      if (!ok) return NextResponse.json({ error: 'Mevcut şifre hatalı' }, { status: 400 });
+      await redis.set(`teacher:${session.id}`, { ...t, passwordHash: await bcrypt.hash(newPassword, 10) });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (session.role === 'student') {
+      const s = await redis.get(`student:${session.id}`);
+      if (!s) return NextResponse.json({ error: 'Kullanıcı bulunamadı' }, { status: 404 });
+      const ok = await bcrypt.compare(password, s.passwordHash);
+      if (!ok) return NextResponse.json({ error: 'Mevcut şifre hatalı' }, { status: 400 });
+      await redis.set(`student:${session.id}`, { ...s, passwordHash: await bcrypt.hash(newPassword, 10) });
+      return NextResponse.json({ ok: true });
+    }
+
+    return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
+  }
+
+  // Müdür başkasının şifresini sıfırlar
+  if (action === 'reset_password') {
+    const session = await getSession();
+    if (!session || session.role !== 'director') {
+      return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+
+    if (targetRole === 'teacher') {
+      const t = await redis.get(`teacher:${targetId}`);
+      if (!t) return NextResponse.json({ error: 'Öğretmen bulunamadı' }, { status: 404 });
+      await redis.set(`teacher:${targetId}`, { ...t, passwordHash: hash });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (targetRole === 'student') {
+      const s = await redis.get(`student:${targetId}`);
+      if (!s) return NextResponse.json({ error: 'Öğrenci bulunamadı' }, { status: 404 });
+      await redis.set(`student:${targetId}`, { ...s, passwordHash: hash });
+      return NextResponse.json({ ok: true });
+    }
+
+    return NextResponse.json({ error: 'Geçersiz hedef' }, { status: 400 });
   }
 
   return NextResponse.json({ error: 'Geçersiz işlem' }, { status: 400 });

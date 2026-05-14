@@ -21,7 +21,7 @@ export async function GET() {
   const results = await pipeline.exec();
   const teachers = results.filter(Boolean).map(t => ({
     id: t.id, name: t.name, branch: t.branch, username: t.username,
-    allowedGroups: t.allowedGroups || [],
+    allowedGroups: t.allowedGroups || [], photoUrl: t.photoUrl || '',
   }));
   return NextResponse.json(teachers);
 }
@@ -32,7 +32,7 @@ export async function POST(req) {
     return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
   }
 
-  const { name, password, branch, allowedGroups } = await req.json();
+  const { name, password, branch, allowedGroups, photoUrl } = await req.json();
   if (!name || !password || !branch) {
     return NextResponse.json({ error: 'Tüm alanlar gerekli' }, { status: 400 });
   }
@@ -51,7 +51,7 @@ export async function POST(req) {
 
   const id = makeId();
   const hash = await bcrypt.hash(password, 10);
-  const teacher = { id, name, username, passwordHash: hash, branch, allowedGroups: allowedGroups || [] };
+  const teacher = { id, name, username, passwordHash: hash, branch, allowedGroups: allowedGroups || [], photoUrl: photoUrl || '' };
   await redis.set(`teacher:${id}`, teacher);
   await redis.sadd('teachers', id);
 
@@ -59,7 +59,7 @@ export async function POST(req) {
   const weekKey = getWeekKey();
   await initWeekForTeacher(id, weekKey);
 
-  return NextResponse.json({ id, name, branch, username, allowedGroups: teacher.allowedGroups });
+  return NextResponse.json({ id, name, branch, username, allowedGroups: teacher.allowedGroups, photoUrl: teacher.photoUrl });
 }
 
 export async function PUT(req) {
@@ -68,11 +68,11 @@ export async function PUT(req) {
     return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
   }
 
-  const { id, name, password, branch, allowedGroups } = await req.json();
+  const { id, name, password, branch, allowedGroups, photoUrl } = await req.json();
   const teacher = await redis.get(`teacher:${id}`);
   if (!teacher) return NextResponse.json({ error: 'Öğretmen bulunamadı' }, { status: 404 });
 
-  const updated = { ...teacher, name, username: name, branch, allowedGroups: allowedGroups || teacher.allowedGroups };
+  const updated = { ...teacher, name, username: name, branch, allowedGroups: allowedGroups || teacher.allowedGroups, photoUrl: photoUrl !== undefined ? photoUrl : teacher.photoUrl };
   if (password) {
     updated.passwordHash = await bcrypt.hash(password, 10);
   }

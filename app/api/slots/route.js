@@ -51,7 +51,7 @@ export async function POST(req) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Giriş gerekli' }, { status: 401 });
 
-  const { teacherId, day, slotId, studentId, weekKey: wk, forceOpen } = await req.json();
+  const { teacherId, day, slotId, studentId, weekKey: wk, forceOpen, fixed } = await req.json();
   const weekKey = wk || getWeekKey();
 
   const teacher = await redis.get(`teacher:${teacherId}`);
@@ -93,25 +93,45 @@ export async function POST(req) {
     return NextResponse.json({ error: 'Bu öğrenci bu öğretmenin etütlerine kayıt olamaz' }, { status: 400 });
   }
 
-  // Mezun yasak slot kontrolü
-  if (targetStudent.group === 'mezun' && slotId === MEZUN_FORBIDDEN_SLOT) {
-    return NextResponse.json({ error: 'Mezun öğrenciler 16:30-17:00 saatindeki etüde kayıt olamaz' }, { status: 400 });
+  // Mezun yasak slot kontrolü (sadece hafta içi)
+  const isWeekend = day >= 5;
+  if (targetStudent.group === 'mezun' && slotId === MEZUN_FORBIDDEN_SLOT && !isWeekend) {
+    return NextResponse.json({ error: 'Mezun öğrenciler hafta içi 16:30-17:00 saatindeki etüde kayıt olamaz' }, { status: 400 });
   }
 
-  // Haftalık limit: aynı branştan 1 etüt
-  const allTeacherSlotKeys = [];
-  for (const day2 of ALL_DAYS) {
-    for (const slot of slotsForDay(day2.index)) {
-      allTeacherSlotKeys.push(slotKey(weekKey, teacherId, day2.index, slot.id));
+  // Tüm öğretmenlerin bu haftaki slotlarını çek (çakışma kontrolleri için)
+  const allTeachers = await getAllTeachers();
+  const allWeekKeys = [];
+  for (const t of allTeachers) {
+    for (const day2 of ALL_DAYS) {
+      for (const slot of slotsForDay(day2.index)) {
+        allWeekKeys.push({ key: slotKey(weekKey, t.id, day2.index, slot.id), branch: t.branch, day: day2.index, slotId: slot.id });
+      }
     }
   }
   const pipeline = redis.pipeline();
-  allTeacherSlotKeys.forEach(k => pipeline.get(k));
+  allWeekKeys.forEach(({ key }) => pipeline.get(key));
   const existingSlots = await pipeline.exec();
-  const alreadyBooked = existingSlots.some(s => s && s.booked && s.studentId === targetStudentId);
-  if (alreadyBooked) {
-    return NextResponse.json({ error: `Bu öğrenci bu hafta ${teacher.branch} dersinden zaten etüt almış` }, { status: 400 });
+
+  const studentSlots = allWeekKeys
+    .map((meta, i) => ({ ...meta, data: existingSlots[i] }))
+    .filter(({ data }) => data && data.booked && data.studentId === targetStudentId);
+
+  // Kural 1: Aynı gün aynı saat diliminde başka etüt var mı? (kimse bypass edemez)
+  const timeConflict = studentSlots.some(s => s.day === day && s.slotId === slotId);
+  if (timeConflict) {
+    return NextResponse.json({ error: 'Bu öğrenci aynı gün aynı saatte başka bir etüde kayıtlı' }, { status: 400 });
   }
+
+  // Kural 2: Aynı branştan birden fazla etüt — müdür bypass edebilir
+  if (session.role !== 'director') {
+    const branchConflict = studentSlots.some(s => s.branch === teacher.branch);
+    if (branchConflict) {
+      return NextResponse.json({ error: `Bu öğrenci bu hafta ${teacher.branch} dersinden zaten etüt almış` }, { status: 400 });
+    }
+  }
+
+  const isFixed = session.role === 'director' && !!fixed;
 
   const bookedData = {
     booked: true,
@@ -121,9 +141,18 @@ export async function POST(req) {
     studentCls: targetStudent.cls,
     bookedBy: session.role,
     bookedAt: new Date().toISOString(),
+    fixed: isFixed,
   };
 
   await redis.set(key, bookedData, { ex: 60 * 60 * 24 * 16 });
+
+  if (isFixed) {
+    await redis.set(`fixed:${teacherId}:${day}:${slotId}`, {
+      studentId: targetStudentId,
+      studentName: targetStudent.name,
+      studentCls: targetStudent.cls,
+    });
+  }
 
   return NextResponse.json({ ok: true, slot: bookedData });
 }
@@ -148,6 +177,9 @@ export async function DELETE(req) {
   if (session.role === 'teacher' && teacherId !== session.id) {
     return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
   }
+
+  // Sabit rezervasyonu da kaldır
+  await redis.del(`fixed:${teacherId}:${day}:${slotId}`);
 
   // Şablona göre disabled durumunu geri yükle
   const template = await redis.get(`template:${teacherId}`);

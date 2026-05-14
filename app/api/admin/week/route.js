@@ -45,5 +45,11 @@ export async function POST(req) {
     return NextResponse.json({ ok: true, nextWeek: next });
   }
 
+  if (action === 'reset') {
+    const current = getWeekKey();
+    await redis.set('current_week', current);
+    return NextResponse.json({ ok: true, weekKey: current });
+  }
+
   return NextResponse.json({ error: 'Geçersiz işlem' }, { status: 400 });
 }
