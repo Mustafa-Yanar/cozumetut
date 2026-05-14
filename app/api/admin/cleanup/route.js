@@ -14,15 +14,15 @@ export async function POST(req) {
   for (const pattern of patterns) {
     const key = pattern.replace(':*', ':');
     deleted[key] = 0;
-    let cursor = 0;
+    let cursor = '0';
     do {
       const [nextCursor, keys] = await redis.scan(cursor, { match: pattern, count: 500 });
-      cursor = parseInt(nextCursor);
+      cursor = String(nextCursor);
       if (keys.length > 0) {
         await redis.del(...keys);
         deleted[key] += keys.length;
       }
-    } while (cursor !== 0);
+    } while (cursor !== '0');
   }
 
   return NextResponse.json({ ok: true, deleted });
