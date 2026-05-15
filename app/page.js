@@ -713,13 +713,11 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
                     );
                   } else if (type === 'etut') {
                     if (entry.studentId) {
-                      cellClass += isTemp
-                        ? 'bg-emerald-50 border-dashed border-emerald-300 text-emerald-700'
-                        : 'bg-emerald-50 border-emerald-200 text-emerald-700';
+                      cellClass += 'bg-emerald-50 border-emerald-200 text-emerald-700';
                       cellContent = (
                         <div className="text-center leading-tight">
                           <div className="text-[9px] truncate font-600" style={{ fontWeight: 600 }}>{entry.studentName}</div>
-                          {isTemp && <div className="text-[8px] text-amber-600">Geçici</div>}
+                          {!isTemp && <div className="text-[8px] text-violet-500">Sabit</div>}
                         </div>
                       );
                     } else {
