@@ -2798,8 +2798,12 @@ function ResetPasswordModal({ target, targetRole, onClose, showToast }) {
 }
 
 function HistoryModal({ target, onClose, currentWeekKey, currentEntries }) {
+  const isStudent = target.type === 'student';
+  const [activeTab, setActiveTab] = useState('etut'); // 'etut' | 'devamsizlik'
   const [weeks, setWeeks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [attendance, setAttendance] = useState(null);
+  const [attLoading, setAttLoading] = useState(false);
   const printRef = React.useRef();
 
   useEffect(() => {
@@ -2812,6 +2816,21 @@ function HistoryModal({ target, onClose, currentWeekKey, currentEntries }) {
       setLoading(false);
     })();
   }, [target.id, target.type]);
+
+  // Devamsızlık sekmesi açıldığında yükle
+  useEffect(() => {
+    if (!isStudent || activeTab !== 'devamsizlik' || attendance !== null) return;
+    (async () => {
+      setAttLoading(true);
+      try {
+        const data = await api(`/api/attendance/student?studentId=${target.id}`);
+        setAttendance(data);
+      } catch {
+        setAttendance({ entries: [], summary: { yok: 0, gec: 0 } });
+      }
+      setAttLoading(false);
+    })();
+  }, [activeTab, isStudent, target.id, attendance]);
 
   const allWeeks = useMemo(() => {
     const result = [];
@@ -2878,25 +2897,28 @@ function HistoryModal({ target, onClose, currentWeekKey, currentEntries }) {
     } catch { return wk; }
   };
 
-  return (
-    <Modal title={`${target.name} – Geçmiş Etütler`} onClose={onClose} wide>
-      {loading ? (
-        <div className="py-12 text-center text-gray-400">Yükleniyor...</div>
-      ) : allWeeks.length === 0 ? (
-        <div className="py-12 text-center text-gray-400">
-          <Clock size={32} className="mx-auto mb-2 opacity-30" />
-          <p>Henüz etüt yok</p>
-          <p className="text-xs mt-1 text-gray-300">Geçmiş haftalar her Pazar arşivlenir</p>
+  const modalTitle = isStudent
+    ? `${target.name} – Geçmiş`
+    : `${target.name} – Geçmiş Etütler`;
+
+  const etutContent = (
+    loading ? (
+      <div className="py-12 text-center text-gray-400">Yükleniyor...</div>
+    ) : allWeeks.length === 0 ? (
+      <div className="py-12 text-center text-gray-400">
+        <Clock size={32} className="mx-auto mb-2 opacity-30" />
+        <p>Henüz etüt yok</p>
+        <p className="text-xs mt-1 text-gray-300">Geçmiş haftalar her Pazar arşivlenir</p>
+      </div>
+    ) : (
+      <>
+        <div className="flex justify-end mb-4">
+          <button onClick={handlePrint} className="btn-ghost !px-4 !py-2 flex items-center gap-2 text-sm text-indigo-600">
+            <BookOpen size={14} /> PDF / Yazdır
+          </button>
         </div>
-      ) : (
-        <>
-          <div className="flex justify-end mb-4">
-            <button onClick={handlePrint} className="btn-ghost !px-4 !py-2 flex items-center gap-2 text-sm text-indigo-600">
-              <BookOpen size={14} /> PDF / Yazdır
-            </button>
-          </div>
-          <div className="space-y-4" ref={printRef}>
-            {allWeeks.map(week => {
+        <div className="space-y-4" ref={printRef}>
+          {allWeeks.map(week => {
               const byDay = {};
               week.entries.forEach(e => {
                 if (!byDay[e.day]) byDay[e.day] = { dayLabel: e.dayLabel, entries: [] };
@@ -2936,7 +2958,102 @@ function HistoryModal({ target, onClose, currentWeekKey, currentEntries }) {
             })}
           </div>
         </>
+      )
+    );
+
+  const devamsizlikContent = (
+    attLoading || attendance === null ? (
+      <div className="py-12 text-center text-gray-400">Yükleniyor...</div>
+    ) : attendance.entries.length === 0 ? (
+      <div className="py-12 text-center text-gray-400">
+        <ClipboardList size={32} className="mx-auto mb-2 opacity-30" />
+        <p>Devamsızlık kaydı yok</p>
+        <p className="text-xs mt-1 text-gray-300">Yok veya geç olarak işaretlenmiş ders bulunmuyor</p>
+      </div>
+    ) : (
+      <>
+        <div className="flex items-center gap-2 mb-4">
+          {attendance.summary.yok > 0 && (
+            <span className="text-xs px-2.5 py-1 rounded-full bg-red-100 text-red-700 font-600" style={{ fontWeight: 600 }}>
+              {attendance.summary.yok} Yok
+            </span>
+          )}
+          {attendance.summary.gec > 0 && (
+            <span className="text-xs px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 font-600" style={{ fontWeight: 600 }}>
+              {attendance.summary.gec} Geç
+            </span>
+          )}
+          <span className="text-xs text-gray-400 ml-1">Toplam {attendance.entries.length} kayıt</span>
+        </div>
+        <div className="space-y-1.5">
+          {(() => {
+            // Tarihe göre grupla
+            const byDate = {};
+            for (const e of attendance.entries) {
+              if (!byDate[e.date]) byDate[e.date] = [];
+              byDate[e.date].push(e);
+            }
+            return Object.entries(byDate).map(([date, items]) => {
+              const d = new Date(date);
+              const fmtDate = d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+              return (
+                <div key={date} className="card overflow-hidden">
+                  <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                      <span className="font-700 text-sm text-gray-800" style={{ fontWeight: 700 }}>{fmtDate}</span>
+                      <span className="text-xs text-gray-400 ml-2">{items[0].dayLabel}</span>
+                    </div>
+                  </div>
+                  <div className="p-2 space-y-1">
+                    {items.map((e, i) => {
+                      const statusClass = e.status === 'yok'
+                        ? 'bg-red-50 border-red-100 text-red-700'
+                        : 'bg-amber-50 border-amber-100 text-amber-700';
+                      return (
+                        <div key={i} className={`flex items-center justify-between px-3 py-2 rounded-lg border text-sm ${statusClass}`}>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-700 ${e.status === 'yok' ? 'bg-red-200 text-red-800' : 'bg-amber-200 text-amber-800'}`} style={{ fontWeight: 700 }}>
+                              {e.status === 'yok' ? 'YOK' : 'GEÇ'}
+                            </span>
+                            <span className="text-xs font-600" style={{ fontWeight: 600 }}>{e.lessonNo}. Ders</span>
+                            <span className="text-xs opacity-70">· {e.cls.toUpperCase()}</span>
+                          </div>
+                          <span className="text-xs opacity-70">
+                            {e.teacherName}{e.branch ? ` · ${e.branch}` : ''}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            });
+          })()}
+        </div>
+      </>
+    )
+  );
+
+  return (
+    <Modal title={modalTitle} onClose={onClose} wide>
+      {isStudent && (
+        <div className="flex rounded-xl border border-gray-200 overflow-hidden mb-4 w-fit">
+          <button
+            onClick={() => setActiveTab('etut')}
+            className={`px-4 py-2 text-xs flex items-center gap-1.5 transition-colors ${activeTab === 'etut' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+            style={{ fontWeight: 600 }}>
+            <Clock size={13} /> Geçmiş Etütler
+          </button>
+          <button
+            onClick={() => setActiveTab('devamsizlik')}
+            className={`px-4 py-2 text-xs flex items-center gap-1.5 transition-colors ${activeTab === 'devamsizlik' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+            style={{ fontWeight: 600 }}>
+            <ClipboardList size={13} /> Devamsızlık Bilgisi
+          </button>
+        </div>
       )}
+      {(!isStudent || activeTab === 'etut') && etutContent}
+      {isStudent && activeTab === 'devamsizlik' && devamsizlikContent}
     </Modal>
   );
 }
