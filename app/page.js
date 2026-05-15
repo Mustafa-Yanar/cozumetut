@@ -879,25 +879,30 @@ function TeacherAttendancePanel({ session, weekKey, showToast }) {
     })();
   }, [session.id, weekKey]);
 
-  // program'daki ders slotlarından gün → { cls: [lessonNo, ...] } haritası
+  // program'daki ders slotlarından gün → ordered [{cls, lessonNos}] listesi
   // lessonNo: o günün slot listesindeki ders slotunun sıra numarası (1'den başlar)
+  // Sıra: programdaki ders slotlarının çıkış sırası (ilk geçtiği yere göre)
   const days = useMemo(() => {
     if (!program) return [];
     return ALL_DAYS.map(day => {
       const dayProg = program[String(day.index)] || {};
       const slots = slotsForDay(day.index);
-      const clsMap = {};
+      const order = [];
+      const idx = {}; // cls → order index
       let lessonNo = 0;
       for (const slot of slots) {
         const entry = dayProg[slot.id];
         if (entry?.type === 'ders' && entry.cls) {
           lessonNo++;
-          if (!clsMap[entry.cls]) clsMap[entry.cls] = [];
-          clsMap[entry.cls].push(lessonNo);
+          if (idx[entry.cls] === undefined) {
+            idx[entry.cls] = order.length;
+            order.push({ cls: entry.cls, lessonNos: [] });
+          }
+          order[idx[entry.cls]].lessonNos.push(lessonNo);
         }
       }
-      if (Object.keys(clsMap).length === 0) return null;
-      return { dayIndex: day.index, dayLabel: day.label, clsMap };
+      if (order.length === 0) return null;
+      return { dayIndex: day.index, dayLabel: day.label, clsList: order };
     }).filter(Boolean);
   }, [program]);
 
@@ -927,7 +932,7 @@ function TeacherAttendancePanel({ session, weekKey, showToast }) {
       const date = dateForDay(dayIndex);
       // O sınıfın o güne ait ders numaralarını bul
       const dayData = days.find(d => d.dayIndex === dayIndex);
-      const lessonNos = dayData?.clsMap[cls] || [];
+      const lessonNos = dayData?.clsList?.find(c => c.cls === cls)?.lessonNos || [];
       lessonNos.forEach(ln => loadAttendance(date, cls, ln));
     }
     setOpenClasses(p => ({ ...p, [key]: !p[key] }));
@@ -980,7 +985,7 @@ function TeacherAttendancePanel({ session, weekKey, showToast }) {
     <div className="space-y-2">
       {days.map(day => {
         const dOpen = !!openDays[day.dayIndex];
-        const clsList = Object.entries(day.clsMap);
+        const clsList = day.clsList;
         return (
           <div key={day.dayIndex} className="card overflow-hidden">
             <button onClick={() => toggleDay(day.dayIndex)}
@@ -1000,7 +1005,7 @@ function TeacherAttendancePanel({ session, weekKey, showToast }) {
 
             {dOpen && (
               <div className="border-t border-gray-100 px-3 py-2 space-y-1.5">
-                {clsList.map(([cls, lessonNos]) => {
+                {clsList.map(({ cls, lessonNos }) => {
                   const ck = `${day.dayIndex}_${cls}`;
                   const cOpen = !!openClasses[ck];
                   const stuList = studentsForCls(cls);
