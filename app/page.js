@@ -2388,11 +2388,13 @@ function StudentGuidancePanel({ session, showToast }) {
               <th className="text-center text-xs text-emerald-600 font-600 py-2.5 px-2" style={{ fontWeight: 600 }}>Doğru</th>
               <th className="text-center text-xs text-red-600 font-600 py-2.5 px-2" style={{ fontWeight: 600 }}>Yanlış</th>
               <th className="text-center text-xs text-gray-500 font-600 py-2.5 px-2" style={{ fontWeight: 600 }}>Boş</th>
+              <th className="text-center text-xs text-indigo-600 font-600 py-2.5 px-2" style={{ fontWeight: 600 }}>Toplam</th>
             </tr>
           </thead>
           <tbody>
             {subjects.map(subject => {
               const val = entries[subject] || { correct: '', wrong: '', empty: '' };
+              const total = (parseInt(val.correct) || 0) + (parseInt(val.wrong) || 0) + (parseInt(val.empty) || 0);
               return (
                 <tr key={subject} className="border-t border-gray-50">
                   <td className="px-3 py-2 text-sm text-gray-700 font-500" style={{ fontWeight: 500 }}>{subject}</td>
@@ -2402,6 +2404,7 @@ function StudentGuidancePanel({ session, showToast }) {
                     className="w-16 text-center text-sm border border-gray-200 rounded-lg py-1.5 focus:border-red-400 focus:outline-none" /></td>
                   <td className="px-2 py-2"><input type="number" min="0" inputMode="numeric" value={val.empty} onChange={e => setVal(subject, 'empty', e.target.value)}
                     className="w-16 text-center text-sm border border-gray-200 rounded-lg py-1.5 focus:border-gray-400 focus:outline-none" /></td>
+                  <td className="px-2 py-2 text-center text-sm font-700 text-indigo-700" style={{ fontWeight: 700 }}>{total > 0 ? total : '—'}</td>
                 </tr>
               );
             })}
@@ -2705,20 +2708,25 @@ function StudentGuidanceView({ studentId, onReviewed }) {
                     <th className="text-center text-[10px] uppercase text-emerald-600 font-600 py-1.5 px-2" style={{ fontWeight: 600 }}>D</th>
                     <th className="text-center text-[10px] uppercase text-red-600 font-600 py-1.5 px-2" style={{ fontWeight: 600 }}>Y</th>
                     <th className="text-center text-[10px] uppercase text-gray-500 font-600 py-1.5 px-2" style={{ fontWeight: 600 }}>B</th>
+                    <th className="text-center text-[10px] uppercase text-indigo-600 font-600 py-1.5 px-2" style={{ fontWeight: 600 }}>Toplam</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {entries.map(([subject, v]) => (
-                    <tr key={subject} className="border-b border-gray-50 last:border-0">
-                      <td className="py-1.5 px-3 text-xs text-gray-700 font-500" style={{ fontWeight: 500 }}>{subject}</td>
-                      <td className="py-1.5 px-2 text-xs text-center text-emerald-700 font-600" style={{ fontWeight: 600 }}>{v.correct || 0}</td>
-                      <td className="py-1.5 px-2 text-xs text-center text-red-700 font-600" style={{ fontWeight: 600 }}>{v.wrong || 0}</td>
-                      <td className="py-1.5 px-2 text-xs text-center text-gray-600">{v.empty || 0}</td>
-                    </tr>
-                  ))}
+                  {entries.map(([subject, v]) => {
+                    const total = (v.correct || 0) + (v.wrong || 0) + (v.empty || 0);
+                    return (
+                      <tr key={subject} className="border-b border-gray-50 last:border-0">
+                        <td className="py-1.5 px-3 text-xs text-gray-700 font-500" style={{ fontWeight: 500 }}>{subject}</td>
+                        <td className="py-1.5 px-2 text-xs text-center text-emerald-700 font-600" style={{ fontWeight: 600 }}>{v.correct || 0}</td>
+                        <td className="py-1.5 px-2 text-xs text-center text-red-700 font-600" style={{ fontWeight: 600 }}>{v.wrong || 0}</td>
+                        <td className="py-1.5 px-2 text-xs text-center text-gray-600">{v.empty || 0}</td>
+                        <td className="py-1.5 px-2 text-xs text-center text-indigo-700 font-700" style={{ fontWeight: 700 }}>{total}</td>
+                      </tr>
+                    );
+                  })}
                   <tr className="bg-gray-50">
                     <td className="py-1.5 px-3 text-xs font-700 text-gray-700" style={{ fontWeight: 700 }}>Toplam</td>
-                    <td colSpan={3} className="py-1.5 px-2 text-[11px] text-center text-indigo-700 font-700" style={{ fontWeight: 700 }}>{totalSolved} soru</td>
+                    <td colSpan={4} className="py-1.5 px-2 text-[11px] text-center text-indigo-700 font-700" style={{ fontWeight: 700 }}>{totalSolved} soru</td>
                   </tr>
                 </tbody>
               </table>
