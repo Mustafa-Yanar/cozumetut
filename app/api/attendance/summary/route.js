@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import redis from '@/lib/redis';
 import { getSession } from '@/lib/auth';
+import { ALL_DAYS, slotsForDay } from '@/lib/constants';
 
 // GET ?date=YYYY-MM-DD
 // Döndürür: { [cls]: { lessons: [ { lessonNo, teacherId, teacherName, absent: [{id,name}], late: [{id,name}] } ] } }
@@ -20,66 +21,62 @@ export async function GET(req) {
   const jsDay = d.getDay(); // 0=Pazar, 1=Pzt...
   const dayIndex = jsDay === 0 ? 6 : jsDay - 1;
 
-  // Tüm öğretmenleri çek
+  // Tüm öğretmenleri ve programlarını çek
   const teacherIds = await redis.smembers('teachers');
   if (!teacherIds || teacherIds.length === 0) return NextResponse.json({});
 
-  const pipeline = redis.pipeline();
+  const teacherPipeline = redis.pipeline();
   teacherIds.forEach(id => {
-    pipeline.get(`teacher:${id}`);
-    pipeline.get(`lesson_schedule:${id}`);
+    teacherPipeline.get(`teacher:${id}`);
+    teacherPipeline.get(`program:${id}`);
   });
-  const results = await pipeline.exec();
+  const teacherResults = await teacherPipeline.exec();
 
-  // Tüm öğrencileri çek (isim lookup için)
+  // Tüm öğrencileri çek
   const studentIds = await redis.smembers('students');
-  const studentPipeline = redis.pipeline();
-  studentIds.forEach(id => pipeline.get(`student:${id}`));
-  const studentResults = await studentPipeline.exec();
   const studentMap = {};
-  studentResults.forEach(s => { if (s) studentMap[s.id] = s; });
+  if (studentIds && studentIds.length > 0) {
+    const studentPipeline = redis.pipeline();
+    studentIds.forEach(id => studentPipeline.get(`student:${id}`));
+    const studentResults = await studentPipeline.exec();
+    studentResults.forEach(s => { if (s) studentMap[s.id] = s; });
+  }
 
   // cls → lessons map
   const clsMap = {};
 
   for (let i = 0; i < teacherIds.length; i++) {
-    const teacher = results[i * 2];
-    const schedule = results[i * 2 + 1];
-    if (!teacher || !schedule) continue;
+    const teacher = teacherResults[i * 2];
+    const program = teacherResults[i * 2 + 1];
+    if (!teacher || !program) continue;
 
-    const daySchedule = schedule[String(dayIndex)];
-    if (!daySchedule) continue;
+    const dayProg = program[String(dayIndex)];
+    if (!dayProg) continue;
 
-    const lessonCount = dayIndex >= 5 ? 8 : 6;
-    for (let ln = 1; ln <= lessonCount; ln++) {
-      const cls = daySchedule[String(ln)];
-      if (!cls) continue;
+    // program'daki ders slotlarını sırayla tara, ders numarası ata
+    const slots = slotsForDay(dayIndex);
+    let lessonNo = 0;
+    for (const slot of slots) {
+      const entry = dayProg[slot.id];
+      if (!entry || entry.type !== 'ders' || !entry.cls) continue;
+      lessonNo++;
+      const cls = entry.cls;
 
       // Yoklama verisini çek
-      const attKey = `attendance:${date}:${teacher.id}:${cls}:${ln}`;
+      const attKey = `attendance:${date}:${teacher.id}:${cls}:${lessonNo}`;
       const att = await redis.get(attKey);
       if (!att) continue;
 
       const absent = [];
       const late = [];
       for (const [studentId, status] of Object.entries(att)) {
-        if (status === 'yok') {
-          const s = studentMap[studentId];
-          absent.push({ id: studentId, name: s?.name || studentId });
-        } else if (status === 'gec') {
-          const s = studentMap[studentId];
-          late.push({ id: studentId, name: s?.name || studentId });
-        }
+        const s = studentMap[studentId];
+        if (status === 'yok') absent.push({ id: studentId, name: s?.name || studentId });
+        else if (status === 'gec') late.push({ id: studentId, name: s?.name || studentId });
       }
 
       if (!clsMap[cls]) clsMap[cls] = { cls, lessons: [] };
-      clsMap[cls].lessons.push({
-        lessonNo: ln,
-        teacherId: teacher.id,
-        teacherName: teacher.name,
-        absent,
-        late,
-      });
+      clsMap[cls].lessons.push({ lessonNo, teacherId: teacher.id, teacherName: teacher.name, absent, late });
     }
   }
 
