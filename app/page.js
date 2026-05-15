@@ -2512,18 +2512,24 @@ function StudentExpandedView({ student, allSlots, onCancelBooking, onGuidanceRev
   const [tab, setTab] = useState('etut');
   return (
     <div className="px-3 py-2">
-      <div className="flex gap-1 mb-3 p-1 bg-white rounded-lg w-fit border border-gray-200">
+      <div className="flex gap-1 mb-3 p-1 bg-white rounded-full w-fit border border-gray-200 shadow-sm">
         {[
           ['etut', 'Etüt Geçmişi', Clock],
           ['devamsizlik', 'Devamsızlık Bilgisi', ClipboardList],
           ['rehberlik', 'Rehberlik', BookOpen],
-        ].map(([key, label, Icon]) => (
-          <button key={key} onClick={() => setTab(key)}
-            className={`px-3 py-1.5 rounded-md text-xs flex items-center gap-1.5 transition-colors ${tab === key ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-700'}`}
-            style={{ fontWeight: 600 }}>
-            <Icon size={12} /> {label}
-          </button>
-        ))}
+        ].map(([key, label, Icon]) => {
+          const active = tab === key;
+          return (
+            <button key={key} onClick={() => setTab(key)}
+              className={`px-3.5 py-1.5 rounded-full text-xs flex items-center gap-1.5 transition-all ${active ? 'text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
+              style={{
+                fontWeight: 600,
+                background: active ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : undefined,
+              }}>
+              <Icon size={12} /> {label}
+            </button>
+          );
+        })}
       </div>
       {tab === 'etut' && (
         <StudentBookingsView student={student} allSlots={allSlots} onCancel={onCancelBooking} />
