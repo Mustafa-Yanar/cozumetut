@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import redis from '@/lib/redis';
 import { getSession } from '@/lib/auth';
-import { getWeekKey, getTeacherWeekSlots, slotKey, getAllTeachers } from '@/lib/slots';
+import { getWeekKey, getTeacherWeekSlots, slotKey, getAllTeachers, slotStartTime } from '@/lib/slots';
 import { ALL_DAYS, slotsForDay, MEZUN_FORBIDDEN_ETUT_SLOT } from '@/lib/constants';
 
 // GET /api/slots?week=2024-W20&teacherId=xxx
@@ -73,6 +73,17 @@ export async function POST(req) {
   }
   if (existing && existing.booked) {
     return NextResponse.json({ error: 'Bu saat dilimi zaten dolu' }, { status: 400 });
+  }
+
+  // Geçmiş slot kontrolü — kimse geçmişe rezervasyon yapamaz
+  {
+    const slotDef = slotsForDay(day).find(s => s.id === slotId);
+    if (slotDef) {
+      const slotStart = slotStartTime(weekKey, day, slotDef.label);
+      if (slotStart.getTime() <= Date.now()) {
+        return NextResponse.json({ error: 'Geçmiş bir saat dilimine rezervasyon yapılamaz' }, { status: 400 });
+      }
+    }
   }
 
   let targetStudentId = studentId;

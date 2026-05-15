@@ -129,6 +129,21 @@ function getWeekKey(date = new Date()) {
   return `${d.getFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
+// O haftanın o günündeki slot başlangıç zamanı geçmiş mi?
+function isSlotPast(weekKey, dayIndex, slotLabel) {
+  const [year, wStr] = weekKey.split('-W');
+  const week = parseInt(wStr);
+  const jan4 = new Date(parseInt(year), 0, 4);
+  const dayOfWeek = jan4.getDay() || 7;
+  const mon = new Date(jan4);
+  mon.setDate(jan4.getDate() - dayOfWeek + 1 + (week - 1) * 7);
+  const startStr = (slotLabel || '').split('–')[0]?.split(':') || ['0','0'];
+  const hh = parseInt(startStr[0] || '0');
+  const mm = parseInt(startStr[1] || '0');
+  const slotStart = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + dayIndex, hh, mm);
+  return slotStart.getTime() <= Date.now();
+}
+
 function weekRangeLabel(weekKey) {
   const [year, wStr] = weekKey.split('-W');
   const week = parseInt(wStr);
@@ -344,6 +359,7 @@ function SlotGrid({ grid, program, teacher, weekKey, session, students, onBook, 
 
 function SlotCell({ slotData, progEntry, slot, dayIndex, slotIdx, session, teacher, onCellClick, onCancel, weekKey }) {
   const isDirector = session.role === 'director';
+  const isPast = isSlotPast(weekKey, dayIndex, slot.label);
   // Ders slotu: hem program şablonundan (progEntry) hem grid'den (slotData.lessonType) gelebilir
   const isLessonFromProg = progEntry?.type === 'ders';
   const isLessonFromGrid = slotData?.lessonType === 'ders';
@@ -366,6 +382,13 @@ function SlotCell({ slotData, progEntry, slot, dayIndex, slotIdx, session, teach
     }
     // Müdür: kapalı slotu bu hafta için açıp rezerve edebilir
     if (isDirector) {
+      if (isPast) {
+        return (
+          <td className="py-1 px-1">
+            <div className="rounded-lg py-2 px-1 text-center text-xs text-gray-200 bg-gray-50 border border-gray-100 select-none" title="Bu saat dilimi geçmiş">✕</div>
+          </td>
+        );
+      }
       return (
         <td className="py-1 px-1">
           <button
@@ -416,6 +439,14 @@ function SlotCell({ slotData, progEntry, slot, dayIndex, slotIdx, session, teach
             </button>
           )}
         </div>
+      </td>
+    );
+  }
+
+  if (isPast) {
+    return (
+      <td className="py-1 px-1">
+        <div className="rounded-lg py-2 px-1 text-center text-xs text-gray-200 bg-gray-50 border border-gray-100 select-none" title="Bu saat dilimi geçmiş">✕</div>
       </td>
     );
   }
@@ -1372,6 +1403,8 @@ function StudentPanel({ session, showToast }) {
       if (s.booked || s.disabled) return false;
       if (!s.allowedGroups || s.allowedGroups.length === 0) return false;
       if (!s.allowedGroups.includes(session.group)) return false;
+      // Geçmiş slotlar listede görünmesin
+      if (isSlotPast(weekKey, s.day, s.slotLabel)) return false;
       // Sınıfa göre izin verilen branşlar
       if (!studentAllowedBranches.includes(s.branch)) return false;
       if (myBookings.some(b => b.branch === s.branch)) return false;
@@ -1381,7 +1414,7 @@ function StudentPanel({ session, showToast }) {
       if (filterDay !== '' && s.day !== parseInt(filterDay)) return false;
       return true;
     });
-  }, [allSlots, myBookings, session, studentAllowedBranches, filterBranch, filterTeacher, filterDay]);
+  }, [allSlots, myBookings, session, studentAllowedBranches, filterBranch, filterTeacher, filterDay, weekKey]);
 
   const handleBook = async ({ teacherId, day, slotId }) => {
     try {
