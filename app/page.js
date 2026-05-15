@@ -866,10 +866,10 @@ function TeacherAttendancePanel({ session, weekKey, showToast }) {
       setLoading(true);
       try {
         const [progData, stuData] = await Promise.all([
-          api(`/api/program?teacherId=${session.id}`),
+          api(`/api/program?teacherId=${session.id}&week=${weekKey}`),
           api('/api/students'),
         ]);
-        setProgram(progData || {});
+        setProgram(progData?.program || {});
         setStudents(stuData);
       } catch (err) {
         showToast(err.message, 'error');
@@ -877,7 +877,7 @@ function TeacherAttendancePanel({ session, weekKey, showToast }) {
         setLoading(false);
       }
     })();
-  }, [session.id]);
+  }, [session.id, weekKey]);
 
   // program'daki ders slotlarından gün → { cls: [lessonNo, ...] } haritası
   // lessonNo: o günün slot listesindeki ders slotunun sıra numarası (1'den başlar)
