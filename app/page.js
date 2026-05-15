@@ -2044,7 +2044,7 @@ function DirectorPanel({ session, showToast }) {
               const isOpen = expandedTeacherId === t.id;
               const teacherBookings = allSlots.filter(s => s.booked && s.teacherId === t.id);
               return (
-                <div key={t.id} className="card overflow-hidden">
+                <div key={t.id} className={`card overflow-hidden transition-all ${isOpen ? '' : 'hover:shadow-md hover:border-indigo-200'}`}>
                   <div className="flex items-center justify-between px-4 py-3.5">
                     <button className="flex items-center gap-3 text-left flex-1 min-w-0" onClick={async () => {
                       if (isOpen) { setExpandedTeacherId(null); return; }
@@ -2399,7 +2399,7 @@ function StudentList({ students, allSlots, weekKey, onCancelBooking, onEdit, onD
               {isOpen && (
                 <div className="grid gap-1.5 mt-1.5 ml-2">
                   {grp.students.map(s => (
-                    <div key={s.id} className="card overflow-hidden text-sm">
+                    <div key={s.id} className={`card overflow-hidden text-sm transition-all ${expandedId === s.id ? '' : 'hover:shadow-md hover:border-indigo-200'}`}>
                       <div className="flex items-center justify-between px-3 py-3">
                         <button className="flex items-center gap-3 flex-1 min-w-0 text-left" onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}>
                           <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-700 shrink-0"
