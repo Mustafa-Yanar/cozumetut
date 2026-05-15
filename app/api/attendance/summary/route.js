@@ -71,8 +71,14 @@ export async function GET(req) {
       const late = [];
       for (const [studentId, status] of Object.entries(att)) {
         const s = studentMap[studentId];
-        if (status === 'yok') absent.push({ id: studentId, name: s?.name || studentId });
-        else if (status === 'gec') late.push({ id: studentId, name: s?.name || studentId });
+        const info = {
+          id: studentId,
+          name: s?.name || studentId,
+          phone: s?.phone || '',
+          parentPhone: s?.parentPhone || '',
+        };
+        if (status === 'yok') absent.push(info);
+        else if (status === 'gec') late.push(info);
       }
 
       if (!clsMap[cls]) clsMap[cls] = { cls, lessons: [] };

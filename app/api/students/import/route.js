@@ -55,6 +55,8 @@ export async function POST(req) {
   for (const row of rows) {
     const rawName = String(row[0] || '').trim();
     const rawCls = String(row[1] || '').trim();
+    const phone = String(row[2] || '').trim();
+    const parentPhone = String(row[3] || '').trim();
 
     if (!rawName || !rawCls) continue;
 
@@ -75,7 +77,7 @@ export async function POST(req) {
     const password = makePassword(name);
     const hash = await bcrypt.hash(password, 10);
     const id = makeId();
-    const student = { id, name, username: name, passwordHash: hash, cls, group };
+    const student = { id, name, username: name, passwordHash: hash, cls, group, phone, parentPhone };
     await redis.set(`student:${id}`, student);
     await redis.sadd('students', id);
     existingUsernames.add(name);

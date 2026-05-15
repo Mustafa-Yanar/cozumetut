@@ -5,7 +5,7 @@ import {
   BookOpen, Users, LogOut, Plus, Trash2, Edit3, Save, X,
   Search, Calendar, Clock, User, Check,
   BookMarked, GraduationCap, Shield, ChevronLeft, ChevronRight,
-  RefreshCw, Settings, Lock, LayoutGrid, List, ClipboardList
+  RefreshCw, Settings, Lock, LayoutGrid, List, ClipboardList, Phone
 } from 'lucide-react';
 
 const BRANCHES = ['Türkçe', 'Matematik', 'Fizik', 'Kimya', 'Biyoloji', 'Tarih', 'Coğrafya', 'Fen Bilgisi', 'Sosyal Bilgiler', 'İnkılap Tarihi', 'İngilizce'];
@@ -1417,6 +1417,28 @@ function TeacherBookingsList({ bookedList, listColorMap, onCancel, canCancelAll 
 
 // ─── DIRECTOR PANEL ────────────────────────────────────────────────────────────
 // ─── MÜDÜR YOKLAMA PANELİ ──────────────────────────────────────────────────────
+function AttendanceStudentRow({ student, variant }) {
+  const colors = variant === 'absent'
+    ? { bg: 'bg-red-50', border: 'border-red-100', text: 'text-red-700', btn: 'bg-red-100 hover:bg-red-200 text-red-700' }
+    : { bg: 'bg-amber-50', border: 'border-amber-100', text: 'text-amber-700', btn: 'bg-amber-100 hover:bg-amber-200 text-amber-700' };
+  const telNumber = (student.parentPhone || student.phone || '').replace(/\s+/g, '');
+  return (
+    <div className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg ${colors.bg} border ${colors.border}`}>
+      <span className={`text-sm font-500 ${colors.text}`} style={{ fontWeight: 500 }}>{student.name}</span>
+      {telNumber ? (
+        <a href={`tel:${telNumber}`} title={`Veliyi ara: ${telNumber}`}
+          className={`shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-full ${colors.btn} transition-colors`}>
+          <Phone size={14} />
+        </a>
+      ) : (
+        <span className="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-300" title="Telefon kayıtlı değil">
+          <Phone size={14} />
+        </span>
+      )}
+    </div>
+  );
+}
+
 function AttendanceSummaryModal({ cls, date, onClose }) {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1465,11 +1487,11 @@ function AttendanceSummaryModal({ cls, date, onClose }) {
               <div key={lesson.lessonNo} className="rounded-xl bg-gray-50 px-4 py-3">
                 <div className="text-xs font-600 text-gray-600 mb-2" style={{ fontWeight: 600 }}>{lesson.lessonNo}. Ders <span className="text-gray-400 font-400">· {lesson.teacherName}</span></div>
                 {hasAbsent && (
-                  <div className="mb-1.5">
+                  <div className="mb-2">
                     <span className="text-[10px] font-600 text-red-500 uppercase tracking-wide" style={{ fontWeight: 600 }}>Yok ({lesson.absent.length})</span>
-                    <div className="mt-1 flex flex-wrap gap-1">
+                    <div className="mt-1.5 flex flex-col gap-1">
                       {lesson.absent.map(s => (
-                        <span key={s.id} className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">{s.name}</span>
+                        <AttendanceStudentRow key={s.id} student={s} variant="absent" />
                       ))}
                     </div>
                   </div>
@@ -1477,9 +1499,9 @@ function AttendanceSummaryModal({ cls, date, onClose }) {
                 {hasLate && (
                   <div>
                     <span className="text-[10px] font-600 text-amber-500 uppercase tracking-wide" style={{ fontWeight: 600 }}>Geç ({lesson.late.length})</span>
-                    <div className="mt-1 flex flex-wrap gap-1">
+                    <div className="mt-1.5 flex flex-col gap-1">
                       {lesson.late.map(s => (
-                        <span key={s.id} className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{s.name}</span>
+                        <AttendanceStudentRow key={s.id} student={s} variant="late" />
                       ))}
                     </div>
                   </div>
@@ -2152,9 +2174,11 @@ function StudentForm({ initial, onClose, onSave }) {
   const [password, setPassword] = useState('');
   const [selectedGroup, setSelectedGroup] = useState(initial?.group||'ortaokul');
   const [cls, setCls] = useState(initial?.cls||STUDENT_GROUPS.ortaokul.classes[0]);
+  const [phone, setPhone] = useState(initial?.phone||'');
+  const [parentPhone, setParentPhone] = useState(initial?.parentPhone||'');
   const [loading, setLoading] = useState(false);
   useEffect(() => { if (!initial) setCls(STUDENT_GROUPS[selectedGroup].classes[0]); }, [selectedGroup]);
-  const submit = async e => { e.preventDefault(); setLoading(true); await onSave({name, username: name, password, cls}); setLoading(false); };
+  const submit = async e => { e.preventDefault(); setLoading(true); await onSave({name, username: name, password, cls, phone, parentPhone}); setLoading(false); };
   return (
     <Modal title={initial?'Öğrenci Düzenle':'Yeni Öğrenci'} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
@@ -2171,6 +2195,12 @@ function StudentForm({ initial, onClose, onSave }) {
           <select className="input" value={cls} onChange={e=>setCls(e.target.value)}>
             {STUDENT_GROUPS[selectedGroup].classes.map(c=><option key={c} value={c}>{classLabel(c)}</option>)}
           </select>
+        </FormField>
+        <FormField label="Öğrenci Telefonu">
+          <input className="input" type="tel" inputMode="tel" placeholder="05XX XXX XX XX" value={phone} onChange={e=>setPhone(e.target.value)} />
+        </FormField>
+        <FormField label="Veli Telefonu">
+          <input className="input" type="tel" inputMode="tel" placeholder="05XX XXX XX XX" value={parentPhone} onChange={e=>setParentPhone(e.target.value)} />
         </FormField>
         <div className="flex gap-3 pt-2">
           <button className="btn-primary flex-1" disabled={loading}>{loading?'Kaydediliyor...':'Kaydet'}</button>

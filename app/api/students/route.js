@@ -20,6 +20,7 @@ export async function GET() {
   const results = await pipeline.exec();
   const students = results.filter(Boolean).map(s => ({
     id: s.id, name: s.name, username: s.username, cls: s.cls, group: s.group,
+    phone: s.phone || '', parentPhone: s.parentPhone || '',
   }));
   return NextResponse.json(students);
 }
@@ -30,7 +31,7 @@ export async function POST(req) {
     return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
   }
 
-  const { name, password, cls } = await req.json();
+  const { name, password, cls, phone, parentPhone } = await req.json();
   if (!name || !password || !cls) {
     return NextResponse.json({ error: 'Tüm alanlar gerekli' }, { status: 400 });
   }
@@ -52,7 +53,7 @@ export async function POST(req) {
 
   const id = makeId();
   const hash = await bcrypt.hash(password, 10);
-  const student = { id, name, username, passwordHash: hash, cls, group };
+  const student = { id, name, username, passwordHash: hash, cls, group, phone: phone || '', parentPhone: parentPhone || '' };
   await redis.set(`student:${id}`, student);
   await redis.sadd('students', id);
 
@@ -65,12 +66,14 @@ export async function PUT(req) {
     return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
   }
 
-  const { id, name, password, cls } = await req.json();
+  const { id, name, password, cls, phone, parentPhone } = await req.json();
   const student = await redis.get(`student:${id}`);
   if (!student) return NextResponse.json({ error: 'Öğrenci bulunamadı' }, { status: 404 });
 
   const group = classToGroup(cls) || student.group;
   const updated = { ...student, name, username: name, cls, group };
+  if (phone !== undefined) updated.phone = phone || '';
+  if (parentPhone !== undefined) updated.parentPhone = parentPhone || '';
   if (password) {
     updated.passwordHash = await bcrypt.hash(password, 10);
   }
