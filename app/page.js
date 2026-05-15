@@ -736,16 +736,28 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
     </Modal>
   );
 
+  // Her günün dolu/boş durumu — dolu sütunlar daha geniş
+  const dayHasContent = {};
+  for (const day of ALL_DAYS) {
+    const dayProg = program?.[String(day.index)] || {};
+    dayHasContent[day.index] = Object.values(dayProg).some(e => e && e.type);
+  }
+  // Genişlik dağıtımı: dolu sütunlar 3 birim, boş sütunlar 1 birim
+  const totalUnits = ALL_DAYS.reduce((sum, d) => sum + (dayHasContent[d.index] ? 3 : 1), 0);
+  const dayWidth = (dayIdx) => `${((dayHasContent[dayIdx] ? 3 : 1) / totalUnits) * 100}%`;
+
   return (
     <Modal title={`${teacher.name} – Program`} onClose={onClose} wide>
       {weekNav}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm border-collapse">
+        <table className="w-full text-sm border-collapse table-fixed">
           <thead>
             <tr>
-              <th className="text-left py-2 px-2 text-xs text-gray-400 font-600 w-20" style={{ fontWeight: 600 }}>Saat</th>
+              <th className="text-left py-2 px-2 text-xs text-gray-400 font-600" style={{ fontWeight: 600, width: '80px' }}>Saat</th>
               {ALL_DAYS.map(day => (
-                <th key={day.index} className={`text-center py-2 px-1 text-xs font-600 ${day.weekend ? 'text-indigo-500' : 'text-gray-500'}`} style={{ fontWeight: 600 }}>
+                <th key={day.index}
+                  className={`text-center py-2 px-1 text-xs font-600 ${day.weekend ? 'text-indigo-500' : 'text-gray-500'}`}
+                  style={{ fontWeight: 600, width: dayWidth(day.index) }}>
                   {day.short}
                   {day.weekend && <span className="block text-[9px] text-indigo-300">H.sonu</span>}
                 </th>
