@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server';
 import redis from '@/lib/redis';
 import { getSession } from '@/lib/auth';
 import { ALL_DAYS, slotsForDay } from '@/lib/constants';
+import { getWeekKey, slotKey } from '@/lib/slots';
 
 // GET ?date=YYYY-MM-DD
-// Döndürür: { [cls]: { lessons: [ { lessonNo, teacherId, teacherName, absent: [{id,name}], late: [{id,name}] } ] } }
+// Döndürür: { [cls]: { lessons: [ { lessonNo, teacherId, teacherName, attendanceTaken, absent, late } ] } }
 
 export async function GET(req) {
   const session = await getSession();
@@ -18,19 +19,17 @@ export async function GET(req) {
 
   // Tarihin gün indexini bul (0=Pzt ... 6=Paz)
   const d = new Date(date);
-  const jsDay = d.getDay(); // 0=Pazar, 1=Pzt...
+  const jsDay = d.getDay();
   const dayIndex = jsDay === 0 ? 6 : jsDay - 1;
+  // Tarihin haftasını bul
+  const weekKey = getWeekKey(new Date(date));
 
-  // Tüm öğretmenleri ve programlarını çek
   const teacherIds = await redis.smembers('teachers');
   if (!teacherIds || teacherIds.length === 0) return NextResponse.json({});
 
   const teacherPipeline = redis.pipeline();
-  teacherIds.forEach(id => {
-    teacherPipeline.get(`teacher:${id}`);
-    teacherPipeline.get(`program:${id}`);
-  });
-  const teacherResults = await teacherPipeline.exec();
+  teacherIds.forEach(id => teacherPipeline.get(`teacher:${id}`));
+  const teachers = await teacherPipeline.exec();
 
   // Tüm öğrencileri çek
   const studentIds = await redis.smembers('students');
@@ -42,27 +41,41 @@ export async function GET(req) {
     studentResults.forEach(s => { if (s) studentMap[s.id] = s; });
   }
 
-  // cls → lessons map
+  // O günün grid slotlarını çek (her öğretmen için)
+  const gridPipeline = redis.pipeline();
+  const meta = [];
+  const slots = slotsForDay(dayIndex);
+  for (let i = 0; i < teacherIds.length; i++) {
+    for (const slot of slots) {
+      meta.push({ teacherIdx: i, slot });
+      gridPipeline.get(slotKey(weekKey, teacherIds[i], dayIndex, slot.id));
+    }
+  }
+  const gridResults = await gridPipeline.exec();
+
+  // Her öğretmen için ders slotlarını sırala, lessonNo türet
+  const lessonsByTeacher = {}; // teacherIdx → [{ slotId, cls, lessonNo }]
+  for (let i = 0; i < teacherIds.length; i++) lessonsByTeacher[i] = [];
+
+  meta.forEach((m, i) => {
+    const sd = gridResults[i];
+    if (!sd || sd.lessonType !== 'ders' || !sd.cls) return;
+    lessonsByTeacher[m.teacherIdx].push({ slotId: m.slot.id, cls: sd.cls });
+  });
+
+  // cls → lessons
   const clsMap = {};
 
   for (let i = 0; i < teacherIds.length; i++) {
-    const teacher = teacherResults[i * 2];
-    const program = teacherResults[i * 2 + 1];
-    if (!teacher || !program) continue;
+    const teacher = teachers[i];
+    if (!teacher) continue;
+    const teacherLessons = lessonsByTeacher[i];
+    if (teacherLessons.length === 0) continue;
 
-    const dayProg = program[String(dayIndex)];
-    if (!dayProg) continue;
+    for (let ln = 0; ln < teacherLessons.length; ln++) {
+      const lessonNo = ln + 1;
+      const { cls } = teacherLessons[ln];
 
-    // program'daki ders slotlarını sırayla tara, ders numarası ata
-    const slots = slotsForDay(dayIndex);
-    let lessonNo = 0;
-    for (const slot of slots) {
-      const entry = dayProg[slot.id];
-      if (!entry || entry.type !== 'ders' || !entry.cls) continue;
-      lessonNo++;
-      const cls = entry.cls;
-
-      // Yoklama verisini çek (kayıt yoksa lesson yine eklenir, boş listelerle)
       const attKey = `attendance:${date}:${teacher.id}:${cls}:${lessonNo}`;
       const att = await redis.get(attKey);
 
@@ -94,7 +107,6 @@ export async function GET(req) {
     }
   }
 
-  // Dersleri lessonNo'ya göre sırala
   for (const cls of Object.keys(clsMap)) {
     clsMap[cls].lessons.sort((a, b) => a.lessonNo - b.lessonNo);
   }

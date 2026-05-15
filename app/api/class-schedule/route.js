@@ -2,15 +2,15 @@ import { NextResponse } from 'next/server';
 import redis from '@/lib/redis';
 import { getSession } from '@/lib/auth';
 import { ALL_DAYS, slotsForDay } from '@/lib/constants';
+import { getWeekKey, slotKey } from '@/lib/slots';
 
-// GET /api/class-schedule?cls=701
-// Bir sınıfın haftalık ders programını döner — tüm öğretmenlerin program'larından
-// type==='ders' ve cls==={cls} olan slotları toplar.
+// GET /api/class-schedule?cls=701&week=2026-W20
+// Bir sınıfın o haftadaki ders programını döner — slot grid'inden okur.
 //
 // Döndürür:
 // {
-//   cls,
-//   schedule: { [dayIndex]: [ { slotId, slotLabel, teacherId, teacherName, branch } ] }
+//   cls, weekKey,
+//   schedule: { [dayIndex]: [ { slotId, slotLabel, teacherId, teacherName, branch, fixed } ] }
 // }
 export async function GET(req) {
   const session = await getSession();
@@ -18,45 +18,49 @@ export async function GET(req) {
 
   const { searchParams } = new URL(req.url);
   const cls = searchParams.get('cls');
+  const weekKey = searchParams.get('week') || getWeekKey();
   if (!cls) return NextResponse.json({ error: 'cls gerekli' }, { status: 400 });
 
   const teacherIds = await redis.smembers('teachers');
   if (!teacherIds || teacherIds.length === 0) {
-    return NextResponse.json({ cls, schedule: {} });
+    return NextResponse.json({ cls, weekKey, schedule: {} });
   }
 
-  const pipeline = redis.pipeline();
-  teacherIds.forEach(id => {
-    pipeline.get(`teacher:${id}`);
-    pipeline.get(`program:${id}`);
-  });
-  const results = await pipeline.exec();
+  const teacherPipeline = redis.pipeline();
+  teacherIds.forEach(id => teacherPipeline.get(`teacher:${id}`));
+  const teachers = await teacherPipeline.exec();
+
+  // Tüm öğretmen × tüm gün × tüm slot için grid'den oku
+  const gridPipeline = redis.pipeline();
+  const meta = [];
+  for (let i = 0; i < teacherIds.length; i++) {
+    const tid = teacherIds[i];
+    for (const day of ALL_DAYS) {
+      for (const slot of slotsForDay(day.index)) {
+        meta.push({ teacherIdx: i, dayIndex: day.index, slot });
+        gridPipeline.get(slotKey(weekKey, tid, day.index, slot.id));
+      }
+    }
+  }
+  const gridResults = await gridPipeline.exec();
 
   const schedule = {};
   for (const day of ALL_DAYS) schedule[day.index] = [];
 
-  for (let i = 0; i < teacherIds.length; i++) {
-    const teacher = results[i * 2];
-    const program = results[i * 2 + 1];
-    if (!teacher || !program) continue;
+  meta.forEach((m, i) => {
+    const sd = gridResults[i];
+    if (!sd || sd.lessonType !== 'ders' || sd.cls !== cls) return;
+    const teacher = teachers[m.teacherIdx];
+    if (!teacher) return;
+    schedule[m.dayIndex].push({
+      slotId: m.slot.id,
+      slotLabel: m.slot.label,
+      teacherId: teacher.id,
+      teacherName: teacher.name,
+      branch: teacher.branch || '',
+      fixed: sd.fixed !== false,
+    });
+  });
 
-    for (const day of ALL_DAYS) {
-      const dayProg = program[String(day.index)] || {};
-      const slots = slotsForDay(day.index);
-      for (const slot of slots) {
-        const entry = dayProg[slot.id];
-        if (entry?.type === 'ders' && entry.cls === cls) {
-          schedule[day.index].push({
-            slotId: slot.id,
-            slotLabel: slot.label,
-            teacherId: teacher.id,
-            teacherName: teacher.name,
-            branch: teacher.branch || '',
-          });
-        }
-      }
-    }
-  }
-
-  return NextResponse.json({ cls, schedule });
+  return NextResponse.json({ cls, weekKey, schedule });
 }
