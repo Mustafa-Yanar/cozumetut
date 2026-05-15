@@ -8,7 +8,7 @@ import {
   RefreshCw, Settings, Lock, LayoutGrid, List, ClipboardList, Phone
 } from 'lucide-react';
 
-const BRANCHES = ['Türkçe', 'Matematik', 'Fizik', 'Kimya', 'Biyoloji', 'Tarih', 'Coğrafya', 'Fen Bilgisi', 'Sosyal Bilgiler', 'İnkılap Tarihi', 'İngilizce'];
+const BRANCHES = ['Türkçe', 'Matematik', 'Fizik', 'Kimya', 'Biyoloji', 'Tarih', 'Coğrafya', 'Felsefe', 'Fen Bilgisi', 'Sosyal Bilgiler', 'İnkılap Tarihi', 'İngilizce'];
 
 const SUB_BRANCHES = {
   Matematik: ['TYT Matematik', 'AYT Matematik', 'Geometri'],
@@ -86,10 +86,12 @@ function guidanceSubjectsFor(cls) {
 }
 
 function allowedBranchesForClass(cls) {
+  if (!cls) return [];
+  if (cls.startsWith('m')) return ['Türkçe', 'Matematik', 'Fizik', 'Kimya', 'Biyoloji', 'Tarih', 'Coğrafya', 'Felsefe'];
   const grade = Math.floor(parseInt(cls) / 100);
   if (grade === 7) return ['Türkçe', 'Matematik', 'Fen Bilgisi', 'Sosyal Bilgiler', 'İngilizce'];
   if (grade === 8) return ['Türkçe', 'Matematik', 'Fen Bilgisi', 'İnkılap Tarihi', 'İngilizce'];
-  return ['Türkçe', 'Matematik', 'Fizik', 'Kimya', 'Biyoloji', 'Tarih', 'Coğrafya'];
+  return ['Türkçe', 'Matematik', 'Fizik', 'Kimya', 'Biyoloji', 'Tarih', 'Coğrafya', 'Felsefe'];
 }
 
 const WEEKDAY_SLOT_IDS = ['w1','w2','w3','w4','w5','w6','w7','w8','w9','w10','w11','w12'];
