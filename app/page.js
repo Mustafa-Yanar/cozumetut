@@ -1695,7 +1695,7 @@ function DirectorPanel({ session, showToast }) {
   return (
     <div>
       <div className="flex gap-1 mb-6 p-1 bg-gray-100 rounded-xl w-fit flex-wrap">
-        {[['teachers','Öğretmenler'],['students','Öğrenciler'],['yoklama','Yoklama']].map(([key,label]) => (
+        {[['teachers','Öğretmenler'],['students','Sınıf/Öğrenci'],['yoklama','Yoklama']].map(([key,label]) => (
           <button key={key} onClick={() => setTab(key)}
             className={`px-4 py-2 rounded-lg text-sm font-600 transition-all ${tab===key?'bg-white shadow text-gray-900':'text-gray-500 hover:text-gray-700'}`}
             style={{ fontWeight:600 }}>{label}</button>
