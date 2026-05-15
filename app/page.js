@@ -1999,6 +1999,7 @@ function StudentList({ students, allSlots, weekKey, onCancelBooking, onEdit, onD
   const [filterGroup, setFilterGroup] = useState('');
   const [collapsed, setCollapsed] = useState({});
   const [expandedId, setExpandedId] = useState(null);
+  const [scheduleCls, setScheduleCls] = useState(null);
 
   const grouped = useMemo(() => {
     const q = searchQ.toLowerCase();
@@ -2052,13 +2053,20 @@ function StudentList({ students, allSlots, weekKey, onCancelBooking, onEdit, onD
                   <span>{grp.label} <span className="font-500 opacity-60" style={{ fontWeight:500 }}>({grp.students.length} öğrenci)</span></span>
                   <ChevronRight size={14} className="transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }} />
                 </button>
-                {onDeleteClass && (
-                  <button onClick={() => onDeleteClass(grp.cls, grp.students)}
-                    className="ml-2 p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
-                    title="Sınıfı sil">
-                    <Trash2 size={12} />
+                <div className="flex items-center gap-1 ml-2">
+                  <button onClick={() => setScheduleCls(grp.cls)}
+                    className="p-1 rounded hover:bg-indigo-100 text-slate-600 hover:text-indigo-600 transition-colors"
+                    title="Sınıfın ders programı">
+                    <Calendar size={12} />
                   </button>
-                )}
+                  {onDeleteClass && (
+                    <button onClick={() => onDeleteClass(grp.cls, grp.students)}
+                      className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
+                      title="Sınıfı sil">
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
               </div>
               {isOpen && (
                 <div className="grid gap-1.5 mt-1.5 ml-2">
@@ -2093,7 +2101,111 @@ function StudentList({ students, allSlots, weekKey, onCancelBooking, onEdit, onD
           );
         })}
       </div>
+      {scheduleCls && (
+        <ClassScheduleModal cls={scheduleCls} onClose={() => setScheduleCls(null)} />
+      )}
     </div>
+  );
+}
+
+function ClassScheduleModal({ cls, onClose }) {
+  const [schedule, setSchedule] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const data = await api(`/api/class-schedule?cls=${encodeURIComponent(cls)}`);
+        setSchedule(data.schedule || {});
+      } catch {
+        setSchedule({});
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [cls]);
+
+  // Görünen günler: en az bir derse sahip günler
+  const visibleDays = useMemo(() => {
+    if (!schedule) return [];
+    return ALL_DAYS.filter(day => (schedule[day.index] || []).length > 0);
+  }, [schedule]);
+
+  // Ders satırlarını oluştur: her gün için ayrı ayrı slotId'ye göre sıralı
+  // Maksimum ders sayısını bulup satır oluştur
+  const rows = useMemo(() => {
+    if (!schedule) return [];
+    const dayLessons = {};
+    let maxLessons = 0;
+    for (const day of visibleDays) {
+      const list = [...(schedule[day.index] || [])];
+      // slot sırasına göre dizilir (w1 < w2... ya da e1 < e2...)
+      list.sort((a, b) => {
+        const an = parseInt(a.slotId.replace(/\D/g, ''));
+        const bn = parseInt(b.slotId.replace(/\D/g, ''));
+        return an - bn;
+      });
+      dayLessons[day.index] = list;
+      if (list.length > maxLessons) maxLessons = list.length;
+    }
+    const result = [];
+    for (let i = 0; i < maxLessons; i++) {
+      const row = { lessonNo: i + 1, byDay: {} };
+      for (const day of visibleDays) {
+        row.byDay[day.index] = dayLessons[day.index][i] || null;
+      }
+      result.push(row);
+    }
+    return result;
+  }, [schedule, visibleDays]);
+
+  return (
+    <Modal title={`${cls.toUpperCase()} – Ders Programı`} onClose={onClose} wide>
+      {loading ? (
+        <div className="flex items-center justify-center h-32 text-gray-400">Yükleniyor...</div>
+      ) : visibleDays.length === 0 ? (
+        <div className="py-8 text-center text-gray-400">
+          <Calendar size={28} className="mx-auto mb-2 opacity-30" />
+          <p className="text-sm">Bu sınıf için tanımlı ders bulunmuyor.</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
+            <thead>
+              <tr>
+                <th className="text-left py-2 px-2 text-gray-400 font-600 w-12" style={{ fontWeight: 600 }}>#</th>
+                {visibleDays.map(day => (
+                  <th key={day.index} className={`text-center py-2 px-2 font-600 ${day.weekend ? 'text-indigo-500' : 'text-gray-600'}`} style={{ fontWeight: 600 }}>
+                    {day.short}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => (
+                <tr key={row.lessonNo} className="border-t border-gray-50">
+                  <td className="py-2 px-2 text-gray-400 font-500" style={{ fontWeight: 500 }}>{row.lessonNo}.</td>
+                  {visibleDays.map(day => {
+                    const lesson = row.byDay[day.index];
+                    if (!lesson) return <td key={day.index} className="py-2 px-1"><div className="rounded py-2 text-center text-gray-200 bg-gray-50 text-[10px]">—</div></td>;
+                    return (
+                      <td key={day.index} className="py-1 px-1">
+                        <div className="rounded-lg py-1.5 px-2 bg-blue-50 border border-blue-100 text-center">
+                          <div className="text-[11px] font-700 text-blue-700 truncate" style={{ fontWeight: 700 }}>{lesson.teacherName}</div>
+                          <div className="text-[9px] text-blue-400 truncate">{lesson.branch}</div>
+                          <div className="text-[9px] text-gray-400 truncate">{lesson.slotLabel}</div>
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Modal>
   );
 }
 
