@@ -1477,6 +1477,12 @@ function AttendanceSummaryModal({ cls, date, onClose }) {
           {summary.lessons.map(lesson => {
             const hasAbsent = lesson.absent.length > 0;
             const hasLate = lesson.late.length > 0;
+            if (!lesson.attendanceTaken) return (
+              <div key={lesson.lessonNo} className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3">
+                <div className="text-xs font-600 text-amber-700 mb-1" style={{ fontWeight: 600 }}>{lesson.lessonNo}. Ders <span className="text-amber-500 font-400">· {lesson.teacherName}</span></div>
+                <p className="text-xs text-amber-600">Yoklama henüz alınmamış.</p>
+              </div>
+            );
             if (!hasAbsent && !hasLate) return (
               <div key={lesson.lessonNo} className="rounded-xl bg-gray-50 px-4 py-3">
                 <div className="text-xs font-600 text-gray-600 mb-1" style={{ fontWeight: 600 }}>{lesson.lessonNo}. Ders <span className="text-gray-400 font-400">· {lesson.teacherName}</span></div>
@@ -1574,7 +1580,7 @@ function DirectorAttendanceView({ showToast }) {
       ) : clsList.length === 0 ? (
         <div className="card p-10 text-center text-gray-400">
           <ClipboardList size={32} className="mx-auto mb-2 opacity-30" />
-          <p>Bu gün için yoklama kaydı yok.</p>
+          <p>Bu gün için tanımlı ders bulunmuyor.</p>
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
@@ -1582,20 +1588,26 @@ function DirectorAttendanceView({ showToast }) {
             const data = summary[cls];
             const totalAbsent = data.lessons.reduce((n, l) => n + l.absent.length, 0);
             const totalLate = data.lessons.reduce((n, l) => n + l.late.length, 0);
+            const takenCount = data.lessons.filter(l => l.attendanceTaken).length;
+            const totalCount = data.lessons.length;
+            const allTaken = takenCount === totalCount;
             return (
               <button key={cls} onClick={() => setSelectedCls(cls)}
                 className="card aspect-square flex flex-col items-center justify-center gap-1.5 hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer p-3">
                 <GraduationCap size={20} className="text-indigo-400" />
                 <span className="text-sm font-700 text-gray-900" style={{ fontWeight: 700 }}>{cls.toUpperCase()}</span>
-                <div className="flex gap-1">
+                <div className="flex flex-wrap gap-1 justify-center">
                   {totalAbsent > 0 && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-600" style={{ fontWeight: 600 }}>{totalAbsent} yok</span>
                   )}
                   {totalLate > 0 && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600 font-600" style={{ fontWeight: 600 }}>{totalLate} geç</span>
                   )}
-                  {totalAbsent === 0 && totalLate === 0 && (
+                  {totalAbsent === 0 && totalLate === 0 && allTaken && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-600 font-600" style={{ fontWeight: 600 }}>Tam</span>
+                  )}
+                  {!allTaken && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-600" style={{ fontWeight: 600 }}>{takenCount}/{totalCount}</span>
                   )}
                 </div>
               </button>

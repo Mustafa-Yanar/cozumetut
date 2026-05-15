@@ -62,27 +62,35 @@ export async function GET(req) {
       lessonNo++;
       const cls = entry.cls;
 
-      // Yoklama verisini çek
+      // Yoklama verisini çek (kayıt yoksa lesson yine eklenir, boş listelerle)
       const attKey = `attendance:${date}:${teacher.id}:${cls}:${lessonNo}`;
       const att = await redis.get(attKey);
-      if (!att) continue;
 
       const absent = [];
       const late = [];
-      for (const [studentId, status] of Object.entries(att)) {
-        const s = studentMap[studentId];
-        const info = {
-          id: studentId,
-          name: s?.name || studentId,
-          phone: s?.phone || '',
-          parentPhone: s?.parentPhone || '',
-        };
-        if (status === 'yok') absent.push(info);
-        else if (status === 'gec') late.push(info);
+      if (att) {
+        for (const [studentId, status] of Object.entries(att)) {
+          const s = studentMap[studentId];
+          const info = {
+            id: studentId,
+            name: s?.name || studentId,
+            phone: s?.phone || '',
+            parentPhone: s?.parentPhone || '',
+          };
+          if (status === 'yok') absent.push(info);
+          else if (status === 'gec') late.push(info);
+        }
       }
 
       if (!clsMap[cls]) clsMap[cls] = { cls, lessons: [] };
-      clsMap[cls].lessons.push({ lessonNo, teacherId: teacher.id, teacherName: teacher.name, absent, late });
+      clsMap[cls].lessons.push({
+        lessonNo,
+        teacherId: teacher.id,
+        teacherName: teacher.name,
+        attendanceTaken: !!att,
+        absent,
+        late,
+      });
     }
   }
 
