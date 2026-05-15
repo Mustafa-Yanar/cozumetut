@@ -10,6 +10,17 @@ import {
 
 const BRANCHES = ['Türkçe', 'Matematik', 'Fizik', 'Kimya', 'Biyoloji', 'Tarih', 'Coğrafya', 'Fen Bilgisi', 'Sosyal Bilgiler', 'İnkılap Tarihi', 'İngilizce'];
 
+const SUB_BRANCHES = {
+  Matematik: ['TYT Matematik', 'AYT Matematik', 'Geometri'],
+};
+
+function classNeedsSubBranch(cls) {
+  if (!cls) return false;
+  if (cls.startsWith('m')) return true;
+  const grade = Math.floor(parseInt(cls) / 100);
+  return grade === 4;
+}
+
 function allowedBranchesForClass(cls) {
   const grade = Math.floor(parseInt(cls) / 100);
   if (grade === 7) return ['Türkçe', 'Matematik', 'Fen Bilgisi', 'Sosyal Bilgiler', 'İngilizce'];
@@ -365,16 +376,19 @@ function SlotCell({ slotData, progEntry, slot, dayIndex, slotIdx, session, teach
   const isLessonFromGrid = slotData?.lessonType === 'ders';
   const isLesson = isLessonFromProg || isLessonFromGrid;
   const lessonCls = isLessonFromProg ? progEntry.cls : slotData?.cls;
+  const lessonSubBranch = isLessonFromProg ? progEntry.subBranch : slotData?.subBranch;
   const lessonIsTemp = slotData?.lessonType === 'ders' && slotData.fixed === false;
 
   if (slotData.disabled) {
     // Ders slotu: sınıf bilgisini göster
     if (isLesson) {
       const cls = lessonCls ? lessonCls.toUpperCase() : '—';
+      const subShort = lessonSubBranch === 'TYT Matematik' ? 'TYT' : lessonSubBranch === 'AYT Matematik' ? 'AYT' : lessonSubBranch === 'Geometri' ? 'Geo' : lessonSubBranch;
       return (
         <td className="py-1 px-1">
           <div className={`rounded-lg py-1.5 px-1 text-center bg-blue-50 border select-none ${lessonIsTemp ? 'border-dashed border-blue-300' : 'border-blue-100'}`}>
             <div className="text-[10px] font-600 text-blue-700 truncate" style={{ fontWeight: 600 }}>{cls}</div>
+            {subShort && <div className="text-[9px] text-blue-500 truncate">{subShort}</div>}
             <div className="text-[9px] text-blue-400">{lessonIsTemp ? 'Geçici ders' : 'Ders'}</div>
           </div>
         </td>
@@ -552,6 +566,7 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
     const existing = getEntry(dayIndex, slotId);
     const [type, setType] = useState(existing?.type || null);
     const [cls, setCls] = useState(existing?.cls || '');
+    const [subBranch, setSubBranch] = useState(existing?.subBranch || '');
     const [studentId, setStudentId] = useState(existing?.studentId || '');
     const [studentName, setStudentName] = useState(existing?.studentName || '');
     const [studentCls, setStudentCls] = useState(existing?.studentCls || '');
@@ -559,11 +574,18 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
     const [fixed, setFixed] = useState(existing?.fixed !== false);
     const [studentSearch, setStudentSearch] = useState('');
     const [clsError, setClsError] = useState(false);
+    const [subBranchError, setSubBranchError] = useState(false);
+
+    const subBranchOptions = SUB_BRANCHES[teacher.branch] || [];
+    const needsSubBranch = subBranchOptions.length > 0 && classNeedsSubBranch(cls);
 
     function handleSaveClick() {
       if (type === 'ders') {
         if (!cls) { setClsError(true); return; }
-        setEntry(dayIndex, slotId, { type: 'ders', cls, fixed });
+        if (needsSubBranch && !subBranch) { setSubBranchError(true); return; }
+        const entry = { type: 'ders', cls, fixed };
+        if (needsSubBranch) entry.subBranch = subBranch;
+        setEntry(dayIndex, slotId, entry);
       } else if (type === 'etut') {
         setEntry(dayIndex, slotId, { type: 'etut', studentId, studentName, studentCls, fixed });
       }
@@ -591,7 +613,7 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
             {dayIndex < 5 && MEZUN_ONLY_LESSON_SLOTS.includes(slotId) && (
               <p className="text-[10px] text-amber-600 mb-1">Bu saat sadece mezun sınıflarına açıktır.</p>
             )}
-            <select value={cls} onChange={e => { setCls(e.target.value); setClsError(false); }}
+            <select value={cls} onChange={e => { setCls(e.target.value); setClsError(false); setSubBranchError(false); }}
               className={`w-full text-xs border rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 ${clsError ? 'border-red-400' : 'border-gray-200'}`}>
               <option value="">Sınıf seçin</option>
               {(dayIndex < 5 && MEZUN_ONLY_LESSON_SLOTS.includes(slotId)
@@ -600,6 +622,17 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
               ).map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
             </select>
             {clsError && <p className="text-xs text-red-500 mt-1">Sınıf seçilmeden ders eklenemez.</p>}
+            {needsSubBranch && (
+              <div className="mt-2">
+                <label className="block text-xs text-gray-500 mb-1">Ders türü</label>
+                <select value={subBranch} onChange={e => { setSubBranch(e.target.value); setSubBranchError(false); }}
+                  className={`w-full text-xs border rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 ${subBranchError ? 'border-red-400' : 'border-gray-200'}`}>
+                  <option value="">Ders türü seçin</option>
+                  {subBranchOptions.map(sb => <option key={sb} value={sb}>{sb}</option>)}
+                </select>
+                {subBranchError && <p className="text-xs text-red-500 mt-1">Ders türü seçilmeden kaydedilemez.</p>}
+              </div>
+            )}
             <label className="flex items-center gap-2 cursor-pointer select-none mt-2">
               <input type="checkbox" checked={fixed} onChange={e => setFixed(e.target.checked)}
                 className="w-4 h-4 rounded accent-indigo-600" />
@@ -738,6 +771,13 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
                   let cellContent = <span className="text-gray-300">+</span>;
 
                   const isTemp = entry?.fixed === false;
+                  const subAbbrev = (sb) => {
+                    if (!sb) return '';
+                    if (sb === 'TYT Matematik') return 'TYT';
+                    if (sb === 'AYT Matematik') return 'AYT';
+                    if (sb === 'Geometri') return 'Geo';
+                    return sb;
+                  };
                   if (type === 'ders') {
                     cellClass += isTemp
                       ? 'bg-blue-50 border-dashed border-blue-300 text-blue-700'
@@ -745,6 +785,7 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
                     cellContent = (
                       <div className="text-center leading-tight">
                         <div className="truncate text-[10px] font-600" style={{ fontWeight: 600 }}>{entry.cls ? entry.cls.toUpperCase() : 'Ders'}</div>
+                        {entry.subBranch && <div className="text-[8px] text-blue-500">{subAbbrev(entry.subBranch)}</div>}
                         {isTemp && <div className="text-[8px] text-amber-600">Geçici</div>}
                       </div>
                     );
@@ -2330,7 +2371,7 @@ function ClassScheduleModal({ cls, onClose }) {
                       <td key={day.index} className="py-1 px-1">
                         <div className="rounded-lg py-1.5 px-2 bg-blue-50 border border-blue-100 text-center">
                           <div className="text-[11px] font-700 text-blue-700 truncate" style={{ fontWeight: 700 }}>{lesson.teacherName}</div>
-                          <div className="text-[9px] text-blue-400 truncate">{lesson.branch}</div>
+                          <div className="text-[9px] text-blue-400 truncate">{lesson.subBranch || lesson.branch}</div>
                           <div className="text-[9px] text-gray-400 truncate">{lesson.slotLabel}</div>
                         </div>
                       </td>

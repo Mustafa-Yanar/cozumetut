@@ -59,11 +59,13 @@ export async function GET(req) {
     // Geçici ders
     if (sd.lessonType === 'ders' && sd.fixed === false) {
       if (!effective[String(m.dayIndex)]) effective[String(m.dayIndex)] = {};
-      effective[String(m.dayIndex)][m.slotId] = {
+      const e = {
         type: 'ders',
         cls: sd.cls || '',
         fixed: false,
       };
+      if (sd.subBranch) e.subBranch = sd.subBranch;
+      effective[String(m.dayIndex)][m.slotId] = e;
       return;
     }
     // Geçici etüt rezervasyonu
@@ -186,13 +188,15 @@ export async function POST(req) {
       }
       if (entry.fixed === false) {
         if (entry.type === 'ders' && entry.cls) {
-          gridPipeline.set(k, {
+          const gridEntry = {
             booked: false,
             disabled: true,
             lessonType: 'ders',
             cls: entry.cls,
             fixed: false,
-          }, { ex: 60 * 60 * 24 * 16 });
+          };
+          if (entry.subBranch) gridEntry.subBranch = entry.subBranch;
+          gridPipeline.set(k, gridEntry, { ex: 60 * 60 * 24 * 16 });
         } else if (entry.type === 'etut' && entry.studentId) {
           gridPipeline.set(k, {
             booked: true,

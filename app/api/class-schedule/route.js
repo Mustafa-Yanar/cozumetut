@@ -58,6 +58,7 @@ export async function GET(req) {
       teacherId: teacher.id,
       teacherName: teacher.name,
       branch: teacher.branch || '',
+      subBranch: sd.subBranch || '',
       fixed: sd.fixed !== false,
     });
   });
