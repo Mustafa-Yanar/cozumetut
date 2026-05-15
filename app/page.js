@@ -271,7 +271,7 @@ function weekRangeLabel(weekKey) {
 }
 
 function WeekNav({ weekKey, onPrev, onNext, canPrev = true, canNext = true }) {
-  const { startStr, endStr, yearStr } = weekRangeLabel(weekKey);
+  const { startStr, endStr } = weekRangeLabel(weekKey);
   return (
     <div className="flex items-center gap-1">
       <button onClick={onPrev} disabled={!canPrev}
@@ -279,7 +279,7 @@ function WeekNav({ weekKey, onPrev, onNext, canPrev = true, canNext = true }) {
         <ChevronLeft size={16} />
       </button>
       <span className="text-xs text-gray-700 text-center whitespace-nowrap">
-        {startStr} – {endStr} <strong style={{ fontWeight:700 }}>{yearStr}</strong>
+        {startStr} – {endStr}
       </span>
       <button onClick={onNext} disabled={!canNext}
         className={`btn-ghost !p-2 ${!canNext ? 'opacity-30 cursor-not-allowed' : ''}`}>
