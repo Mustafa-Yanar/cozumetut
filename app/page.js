@@ -28,31 +28,66 @@ function allowedBranchesForClass(cls) {
   return ['Türkçe', 'Matematik', 'Fizik', 'Kimya', 'Biyoloji', 'Tarih', 'Coğrafya'];
 }
 
-const WEEKDAY_SLOTS = [
-  { id: 'w1',  label: '09:45–10:20' },
-  { id: 'w2',  label: '10:30–11:05' },
-  { id: 'w3',  label: '11:15–11:50' },
-  { id: 'w4',  label: '12:00–12:35' },
-  { id: 'w5',  label: '13:30–14:05' },
-  { id: 'w6',  label: '14:15–14:50' },
-  { id: 'w7',  label: '15:00–15:35' },
-  { id: 'w8',  label: '15:45–16:20' },
-  { id: 'w9',  label: '16:30–17:05' },
-  { id: 'w10', label: '17:15–17:50' },
-  { id: 'w11', label: '18:00–18:35' },
+const WEEKDAY_SLOT_IDS = ['w1','w2','w3','w4','w5','w6','w7','w8','w9','w10','w11','w12'];
+const WEEKEND_SLOT_IDS = ['e1','e2','e3','e4','e5','e6','e7','e8','e9','e10','e11','e12'];
+
+const DEFAULT_WEEKDAY_TIMES = [
+  { start: '09:45', end: '10:20' }, { start: '10:30', end: '11:05' },
+  { start: '11:15', end: '11:50' }, { start: '12:00', end: '12:35' },
+  { start: '13:30', end: '14:05' }, { start: '14:15', end: '14:50' },
+  { start: '15:00', end: '15:35' }, { start: '15:45', end: '16:20' },
+  { start: '16:30', end: '17:05' }, { start: '17:15', end: '17:50' },
+  { start: '18:00', end: '18:35' }, { start: '18:45', end: '19:20' },
 ];
-const WEEKEND_SLOTS = [
-  { id: 'e1',  label: '09:30–10:05' },
-  { id: 'e2',  label: '10:15–10:50' },
-  { id: 'e3',  label: '11:00–11:35' },
-  { id: 'e4',  label: '11:45–12:20' },
-  { id: 'e5',  label: '12:30–13:05' },
-  { id: 'e6',  label: '13:15–13:50' },
-  { id: 'e7',  label: '14:30–15:05' },
-  { id: 'e8',  label: '15:15–15:50' },
-  { id: 'e9',  label: '16:00–16:35' },
-  { id: 'e10', label: '16:45–17:20' },
+const DEFAULT_WEEKEND_TIMES = [
+  { start: '09:30', end: '10:05' }, { start: '10:15', end: '10:50' },
+  { start: '11:00', end: '11:35' }, { start: '11:45', end: '12:20' },
+  { start: '12:30', end: '13:05' }, { start: '13:15', end: '13:50' },
+  { start: '14:30', end: '15:05' }, { start: '15:15', end: '15:50' },
+  { start: '16:00', end: '16:35' }, { start: '16:45', end: '17:20' },
+  { start: '17:30', end: '18:05' }, { start: '18:15', end: '18:50' },
 ];
+
+// Global slot times — uygulama mount'unda Redis'ten yüklenir
+let GLOBAL_SLOT_TIMES = { weekday: DEFAULT_WEEKDAY_TIMES, weekend: DEFAULT_WEEKEND_TIMES };
+const slotTimesListeners = new Set();
+function setGlobalSlotTimes(times) {
+  GLOBAL_SLOT_TIMES = { weekday: times.weekday || DEFAULT_WEEKDAY_TIMES, weekend: times.weekend || DEFAULT_WEEKEND_TIMES };
+  slotTimesListeners.forEach(l => l());
+}
+function useGlobalSlotTimes() {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const l = () => force(x => x + 1);
+    slotTimesListeners.add(l);
+    return () => slotTimesListeners.delete(l);
+  }, []);
+  return GLOBAL_SLOT_TIMES;
+}
+
+function makeSlots(ids, times) {
+  return ids.map((id, i) => {
+    const t = times[i] || { start: '00:00', end: '00:00' };
+    return { id, label: `${t.start}–${t.end}`, start: t.start, end: t.end };
+  });
+}
+
+// Dinamik tek-noktadan erişim — GLOBAL_SLOT_TIMES'a göre güncellenir
+function getWeekdaySlots() { return makeSlots(WEEKDAY_SLOT_IDS, GLOBAL_SLOT_TIMES.weekday); }
+function getWeekendSlots() { return makeSlots(WEEKEND_SLOT_IDS, GLOBAL_SLOT_TIMES.weekend); }
+
+// Geriye uyumlu — eski adlar artık dinamik proxy
+const slotProxy = (getter) => new Proxy({}, {
+  get(_, prop) {
+    const arr = getter();
+    if (prop === 'length') return arr.length;
+    if (prop === Symbol.iterator) return arr[Symbol.iterator].bind(arr);
+    if (prop === 'map' || prop === 'forEach' || prop === 'filter' || prop === 'find' || prop === 'some' || prop === 'every') return arr[prop].bind(arr);
+    return arr[prop];
+  },
+});
+const WEEKDAY_SLOTS = slotProxy(getWeekdaySlots);
+const WEEKEND_SLOTS = slotProxy(getWeekendSlots);
 const ALL_DAYS = [
   { index: 0, label: 'Pazartesi', short: 'Pzt', weekend: false },
   { index: 1, label: 'Salı',      short: 'Sal', weekend: false },
@@ -64,7 +99,7 @@ const ALL_DAYS = [
 ];
 
 function slotsForDay(dayIndex) {
-  return dayIndex >= 5 ? WEEKEND_SLOTS : WEEKDAY_SLOTS;
+  return dayIndex >= 5 ? getWeekendSlots() : getWeekdaySlots();
 }
 const GROUPS = { ortaokul: 'Ortaokul', lise: 'Lise', mezun: 'Mezun' };
 const MEZUN_ONLY_LESSON_SLOTS = ['w1','w2','w3','w4','w5','w6'];
@@ -480,6 +515,135 @@ function SlotCell({ slotData, progEntry, slot, dayIndex, slotIdx, session, teach
 // ─── ŞABLON EDITÖRÜ ────────────────────────────────────────────────────────────
 // ─── PROGRAM EDİTÖRÜ (Ders + Etüt birleşik) ────────────────────────────────────
 // program[dayIndex][slotId] = { type: 'ders'|'etut'|null, cls?, studentId?, studentName?, studentCls?, fixed? }
+function SlotTimesEditor({ onClose, showToast }) {
+  const [weekday, setWeekday] = useState([]);
+  const [weekend, setWeekend] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await api('/api/slot-times');
+        setWeekday(data.weekday || []);
+        setWeekend(data.weekend || []);
+      } catch (e) { showToast(e.message, 'error'); }
+      setLoading(false);
+    })();
+  }, []);
+
+  // 5dk aralıklarla 09:00 - 19:20 arası tüm zamanlar
+  const TIME_OPTIONS = useMemo(() => {
+    const out = [];
+    for (let h = 9; h <= 19; h++) {
+      for (let m = 0; m < 60; m += 5) {
+        if (h === 19 && m > 20) break;
+        out.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+      }
+    }
+    return out;
+  }, []);
+
+  function toMin(t) {
+    const [h, m] = t.split(':').map(n => parseInt(n));
+    return h * 60 + m;
+  }
+
+  function updateSlot(arr, setArr, i, field, value) {
+    const next = arr.map((s, idx) => idx === i ? { ...s, [field]: value } : s);
+    // Sonraki slotların başlangıcı önceki bitişten önce ise bunları temizle/düzelt
+    for (let j = i + 1; j < next.length; j++) {
+      if (toMin(next[j].start) < toMin(next[j - 1].end)) {
+        next[j] = { start: '', end: '' };
+      }
+    }
+    setArr(next);
+  }
+
+  function renderRow(arr, setArr, i) {
+    const s = arr[i];
+    const prevEnd = i > 0 ? arr[i - 1].end : null;
+    const startOptions = TIME_OPTIONS.filter(t => !prevEnd || toMin(t) >= toMin(prevEnd));
+    const endOptions = s.start ? TIME_OPTIONS.filter(t => toMin(t) > toMin(s.start)) : [];
+    return (
+      <tr key={i} className="border-t border-gray-50">
+        <td className="py-1 px-2 text-xs text-gray-400 w-12">{i + 1}.</td>
+        <td className="py-1 px-1">
+          <select value={s.start || ''} onChange={e => updateSlot(arr, setArr, i, 'start', e.target.value)}
+            className="w-full text-xs border border-gray-200 rounded px-2 py-1 bg-white">
+            <option value="">—</option>
+            {startOptions.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </td>
+        <td className="py-1 px-1 text-xs text-gray-400 text-center">–</td>
+        <td className="py-1 px-1">
+          <select value={s.end || ''} onChange={e => updateSlot(arr, setArr, i, 'end', e.target.value)}
+            disabled={!s.start}
+            className="w-full text-xs border border-gray-200 rounded px-2 py-1 bg-white disabled:bg-gray-50 disabled:text-gray-300">
+            <option value="">—</option>
+            {endOptions.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </td>
+      </tr>
+    );
+  }
+
+  async function handleSave() {
+    // Tüm satırların dolu olduğunu doğrula
+    for (const arr of [weekday, weekend]) {
+      for (const s of arr) {
+        if (!s.start || !s.end) {
+          showToast('Tüm saat alanlarını doldurun', 'error');
+          return;
+        }
+      }
+    }
+    setSaving(true);
+    try {
+      await api('/api/slot-times', { method: 'POST', body: JSON.stringify({ weekday, weekend }) });
+      setGlobalSlotTimes({ weekday, weekend });
+      showToast('Saatler kaydedildi ve uygulandı');
+      onClose();
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return (
+    <Modal title="Ders Saatleri" onClose={onClose} wide>
+      <div className="text-center py-8 text-gray-400 text-sm">Yükleniyor...</div>
+    </Modal>
+  );
+
+  return (
+    <Modal title="Ders Saatleri" onClose={onClose} wide>
+      <p className="text-xs text-gray-500 mb-3">12 slot, 5 dakikalık periyotlar (09:00 – 19:20). Her satırın başlangıcı önceki bitişten sonra olmalı.</p>
+      <div className="grid md:grid-cols-2 gap-4">
+        <div>
+          <h4 className="text-xs font-700 text-gray-700 uppercase mb-1.5" style={{ fontWeight: 700 }}>Hafta İçi</h4>
+          <table className="w-full text-sm">
+            <tbody>{weekday.map((_, i) => renderRow(weekday, setWeekday, i))}</tbody>
+          </table>
+        </div>
+        <div>
+          <h4 className="text-xs font-700 text-gray-700 uppercase mb-1.5" style={{ fontWeight: 700 }}>Hafta Sonu</h4>
+          <table className="w-full text-sm">
+            <tbody>{weekend.map((_, i) => renderRow(weekend, setWeekend, i))}</tbody>
+          </table>
+        </div>
+      </div>
+      <div className="flex gap-3 mt-5">
+        <button className="btn-primary flex-1" onClick={handleSave} disabled={saving}>
+          {saving ? 'Kaydediliyor…' : 'Kaydet ve Uygula'}
+        </button>
+        <button className="btn-ghost" onClick={onClose}>İptal</button>
+      </div>
+    </Modal>
+  );
+}
+
 function ProgramEditor({ teacher, onClose, showToast, students }) {
   const currentWeek = getWeekKey();
   const maxWeek = getAdjacentWeek(getAdjacentWeek(currentWeek, 1), 1);
@@ -1890,6 +2054,7 @@ function DirectorPanel({ session, showToast }) {
   const [showTeacherForm, setShowTeacherForm] = useState(false);
   const [showStudentForm, setShowStudentForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showSlotTimes, setShowSlotTimes] = useState(false);
   const [editTeacher, setEditTeacher] = useState(null);
   const [editStudent, setEditStudent] = useState(null);
   const [selectedTeacherForSlots, setSelectedTeacherForSlots] = useState(null);
@@ -1975,9 +2140,14 @@ function DirectorPanel({ session, showToast }) {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-700 text-lg" style={{ fontWeight:700 }}>Öğretmenler ({teachers.length})</h3>
-            <button className="btn-primary !px-4 !py-2 flex items-center gap-1.5 text-sm" onClick={() => { setEditTeacher(null); setShowTeacherForm(true); }}>
-              <Plus size={14} /> Ekle
-            </button>
+            <div className="flex gap-2">
+              <button className="btn-ghost !px-3 !py-2 flex items-center gap-1.5 text-sm" onClick={() => setShowSlotTimes(true)}>
+                <Clock size={14} /> Saatler
+              </button>
+              <button className="btn-primary !px-4 !py-2 flex items-center gap-1.5 text-sm" onClick={() => { setEditTeacher(null); setShowTeacherForm(true); }}>
+                <Plus size={14} /> Ekle
+              </button>
+            </div>
           </div>
           <div className="grid gap-2">
             {teachers.map(t => {
@@ -2170,6 +2340,9 @@ function DirectorPanel({ session, showToast }) {
       )}
       {showImport && (
         <ImportModal onClose={() => setShowImport(false)} showToast={showToast} onDone={() => { setShowImport(false); loadAll(weekKey); }} />
+      )}
+      {showSlotTimes && (
+        <SlotTimesEditor onClose={() => setShowSlotTimes(false)} showToast={showToast} />
       )}
     </div>
   );
@@ -2925,7 +3098,14 @@ export default function App() {
       try {
         const status = await api('/api/auth');
         setDirectorExists(status.directorExists);
-        if (status.session) setSession(status.session);
+        if (status.session) {
+          setSession(status.session);
+          // Slot saatlerini global'e yükle
+          try {
+            const times = await api('/api/slot-times');
+            setGlobalSlotTimes(times);
+          } catch {}
+        }
       } catch {}
       setLoading(false);
     })();
@@ -2945,7 +3125,13 @@ export default function App() {
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-gray-400 text-sm">Yükleniyor...</div></div>;
 
   if (!session) return (
-    <><LoginScreen directorExists={directorExists} onLogin={setSession} showToast={showToast} /><Toast toast={toast} /></>
+    <><LoginScreen directorExists={directorExists} onLogin={async (s) => {
+      setSession(s);
+      try {
+        const times = await api('/api/slot-times');
+        setGlobalSlotTimes(times);
+      } catch {}
+    }} showToast={showToast} /><Toast toast={toast} /></>
   );
 
   const roleLabel = { director:'Müdür', teacher:'Öğretmen', student:'Öğrenci' };

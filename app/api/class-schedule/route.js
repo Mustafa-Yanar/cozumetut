@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import redis from '@/lib/redis';
 import { getSession } from '@/lib/auth';
 import { ALL_DAYS, slotsForDay } from '@/lib/constants';
-import { getWeekKey, slotKey } from '@/lib/slots';
+import { getWeekKey, slotKey, getSlotTimes } from '@/lib/slots';
 
 // GET /api/class-schedule?cls=701&week=2026-W20
 // Bir sınıfın o haftadaki ders programını döner — slot grid'inden okur.
@@ -31,12 +31,13 @@ export async function GET(req) {
   const teachers = await teacherPipeline.exec();
 
   // Tüm öğretmen × tüm gün × tüm slot için grid'den oku
+  const slotTimes = await getSlotTimes();
   const gridPipeline = redis.pipeline();
   const meta = [];
   for (let i = 0; i < teacherIds.length; i++) {
     const tid = teacherIds[i];
     for (const day of ALL_DAYS) {
-      for (const slot of slotsForDay(day.index)) {
+      for (const slot of slotsForDay(day.index, day.index >= 5 ? slotTimes.weekend : slotTimes.weekday)) {
         meta.push({ teacherIdx: i, dayIndex: day.index, slot });
         gridPipeline.get(slotKey(weekKey, tid, day.index, slot.id));
       }

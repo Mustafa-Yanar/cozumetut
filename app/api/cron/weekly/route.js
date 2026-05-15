@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import redis from '@/lib/redis';
-import { getWeekKey, getMondayOfWeek, initWeekForTeacher, slotKey } from '@/lib/slots';
+import { getWeekKey, getMondayOfWeek, initWeekForTeacher, slotKey, getSlotTimes } from '@/lib/slots';
 import { ALL_DAYS, slotsForDay } from '@/lib/constants';
 
 // Pazar 11:00 UTC+3 = 08:00 UTC → "0 8 * * 0"
@@ -32,6 +32,7 @@ export async function GET(req) {
 
   // Mevcut haftayı arşivle (öğretmen bazlı ve öğrenci bazlı)
   const studentArchiveMap = {}; // studentId -> entries[]
+  const slotTimes = await getSlotTimes();
 
   for (const tid of ids) {
     const teacher = await redis.get(`teacher:${tid}`);
@@ -39,7 +40,7 @@ export async function GET(req) {
 
     const teacherEntries = [];
     for (const day of ALL_DAYS) {
-      for (const slot of slotsForDay(day.index)) {
+      for (const slot of slotsForDay(day.index, day.index >= 5 ? slotTimes.weekend : slotTimes.weekday)) {
         const k = slotKey(currentWeek, tid, day.index, slot.id);
         const sd = await redis.get(k);
         if (!sd || !sd.booked) continue;

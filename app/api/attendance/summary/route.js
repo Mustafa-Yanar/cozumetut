@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import redis from '@/lib/redis';
 import { getSession } from '@/lib/auth';
 import { ALL_DAYS, slotsForDay } from '@/lib/constants';
-import { getWeekKey, slotKey } from '@/lib/slots';
+import { getWeekKey, slotKey, getSlotTimes } from '@/lib/slots';
 
 // GET ?date=YYYY-MM-DD
 // Döndürür: { [cls]: { lessons: [ { lessonNo, teacherId, teacherName, attendanceTaken, absent, late } ] } }
@@ -42,9 +42,10 @@ export async function GET(req) {
   }
 
   // O günün grid slotlarını çek (her öğretmen için)
+  const slotTimes = await getSlotTimes();
   const gridPipeline = redis.pipeline();
   const meta = [];
-  const slots = slotsForDay(dayIndex);
+  const slots = slotsForDay(dayIndex, dayIndex >= 5 ? slotTimes.weekend : slotTimes.weekday);
   for (let i = 0; i < teacherIds.length; i++) {
     for (const slot of slots) {
       meta.push({ teacherIdx: i, slot });

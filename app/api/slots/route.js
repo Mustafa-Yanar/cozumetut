@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import redis from '@/lib/redis';
 import { getSession } from '@/lib/auth';
-import { getWeekKey, getTeacherWeekSlots, slotKey, getAllTeachers, slotStartTime } from '@/lib/slots';
+import { getWeekKey, getTeacherWeekSlots, slotKey, getAllTeachers, slotStartTime, getSlotTimes } from '@/lib/slots';
 import { ALL_DAYS, slotsForDay, MEZUN_FORBIDDEN_ETUT_SLOT } from '@/lib/constants';
 
 // GET /api/slots?week=2024-W20&teacherId=xxx
@@ -19,12 +19,13 @@ export async function GET(req) {
   }
 
   const teachers = await getAllTeachers();
+  const slotTimes = await getSlotTimes();
   const allSlots = [];
 
   for (const teacher of teachers) {
     const grid = await getTeacherWeekSlots(teacher.id, weekKey);
     for (const day of ALL_DAYS) {
-      const slots = slotsForDay(day.index);
+      const slots = slotsForDay(day.index, day.index >= 5 ? slotTimes.weekend : slotTimes.weekday);
       for (let s = 0; s < slots.length; s++) {
         const slotData = grid[day.index][s] || { booked: false, disabled: true };
         allSlots.push({
@@ -76,8 +77,9 @@ export async function POST(req) {
   }
 
   // Geçmiş slot kontrolü — kimse geçmişe rezervasyon yapamaz
+  const slotTimes = await getSlotTimes();
   {
-    const slotDef = slotsForDay(day).find(s => s.id === slotId);
+    const slotDef = slotsForDay(day, day >= 5 ? slotTimes.weekend : slotTimes.weekday).find(s => s.id === slotId);
     if (slotDef) {
       const slotStart = slotStartTime(weekKey, day, slotDef.label);
       if (slotStart.getTime() <= Date.now()) {
@@ -119,7 +121,7 @@ export async function POST(req) {
   const allWeekKeys = [];
   for (const t of allTeachers) {
     for (const day2 of ALL_DAYS) {
-      for (const slot of slotsForDay(day2.index)) {
+      for (const slot of slotsForDay(day2.index, day2.index >= 5 ? slotTimes.weekend : slotTimes.weekday)) {
         allWeekKeys.push({ key: slotKey(weekKey, t.id, day2.index, slot.id), branch: t.branch, day: day2.index, slotId: slot.id });
       }
     }

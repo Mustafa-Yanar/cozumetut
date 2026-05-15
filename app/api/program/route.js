@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import redis from '@/lib/redis';
 import { getSession } from '@/lib/auth';
 import { slotsForDay, ALL_DAYS, MEZUN_ONLY_LESSON_SLOTS, STUDENT_GROUPS } from '@/lib/constants';
-import { getWeekKey, slotKey, isEditableWeek, initWeekForTeacher, slotStartTime } from '@/lib/slots';
+import { getWeekKey, slotKey, isEditableWeek, initWeekForTeacher, slotStartTime, getSlotTimes } from '@/lib/slots';
 
 // program:{teacherId} → ŞABLON (sabit ders/etüt, her hafta tekrar eder)
 // entry: { type: 'ders'|'etut'|null, cls?, studentId?, ..., fixed: true }
@@ -30,10 +30,11 @@ export async function GET(req) {
   const template = (await redis.get(programKey(teacherId))) || {};
 
   // Grid'i çek, geçici (fixed:false) entry'leri topla
+  const slotTimes = await getSlotTimes();
   const pipeline = redis.pipeline();
   const slotMeta = [];
   for (const day of ALL_DAYS) {
-    for (const slot of slotsForDay(day.index)) {
+    for (const slot of slotsForDay(day.index, day.index >= 5 ? slotTimes.weekend : slotTimes.weekday)) {
       slotMeta.push({ dayIndex: day.index, slotId: slot.id });
       pipeline.get(slotKey(weekKey, teacherId, day.index, slot.id));
     }
@@ -109,8 +110,10 @@ export async function POST(req) {
 
   // Geçmiş slotları diff'ten sessizce kaldır — frontend yanlışlıkla gönderirse
   // mevcut etüt/ders kayıtlarına dokunulmaz.
+  const postSlotTimes = await getSlotTimes();
   for (const dayIdx of Object.keys(program)) {
-    const slots = slotsForDay(parseInt(dayIdx));
+    const di = parseInt(dayIdx);
+    const slots = slotsForDay(di, di >= 5 ? postSlotTimes.weekend : postSlotTimes.weekday);
     for (const slotId of Object.keys(program[dayIdx] || {})) {
       const slotDef = slots.find(s => s.id === slotId);
       if (!slotDef) continue;
