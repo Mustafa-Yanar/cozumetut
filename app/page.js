@@ -515,135 +515,6 @@ function SlotCell({ slotData, progEntry, slot, dayIndex, slotIdx, session, teach
 // ─── ŞABLON EDITÖRÜ ────────────────────────────────────────────────────────────
 // ─── PROGRAM EDİTÖRÜ (Ders + Etüt birleşik) ────────────────────────────────────
 // program[dayIndex][slotId] = { type: 'ders'|'etut'|null, cls?, studentId?, studentName?, studentCls?, fixed? }
-function SlotTimesEditor({ onClose, showToast }) {
-  const [weekday, setWeekday] = useState([]);
-  const [weekend, setWeekend] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const data = await api('/api/slot-times');
-        setWeekday(data.weekday || []);
-        setWeekend(data.weekend || []);
-      } catch (e) { showToast(e.message, 'error'); }
-      setLoading(false);
-    })();
-  }, []);
-
-  // 5dk aralıklarla 09:00 - 19:20 arası tüm zamanlar
-  const TIME_OPTIONS = useMemo(() => {
-    const out = [];
-    for (let h = 9; h <= 19; h++) {
-      for (let m = 0; m < 60; m += 5) {
-        if (h === 19 && m > 20) break;
-        out.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
-      }
-    }
-    return out;
-  }, []);
-
-  function toMin(t) {
-    const [h, m] = t.split(':').map(n => parseInt(n));
-    return h * 60 + m;
-  }
-
-  function updateSlot(arr, setArr, i, field, value) {
-    const next = arr.map((s, idx) => idx === i ? { ...s, [field]: value } : s);
-    // Sonraki slotların başlangıcı önceki bitişten önce ise bunları temizle/düzelt
-    for (let j = i + 1; j < next.length; j++) {
-      if (toMin(next[j].start) < toMin(next[j - 1].end)) {
-        next[j] = { start: '', end: '' };
-      }
-    }
-    setArr(next);
-  }
-
-  function renderRow(arr, setArr, i) {
-    const s = arr[i];
-    const prevEnd = i > 0 ? arr[i - 1].end : null;
-    const startOptions = TIME_OPTIONS.filter(t => !prevEnd || toMin(t) >= toMin(prevEnd));
-    const endOptions = s.start ? TIME_OPTIONS.filter(t => toMin(t) > toMin(s.start)) : [];
-    return (
-      <tr key={i} className="border-t border-gray-50">
-        <td className="py-1 px-2 text-xs text-gray-400 w-12">{i + 1}.</td>
-        <td className="py-1 px-1">
-          <select value={s.start || ''} onChange={e => updateSlot(arr, setArr, i, 'start', e.target.value)}
-            className="w-full text-xs border border-gray-200 rounded px-2 py-1 bg-white">
-            <option value="">—</option>
-            {startOptions.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </td>
-        <td className="py-1 px-1 text-xs text-gray-400 text-center">–</td>
-        <td className="py-1 px-1">
-          <select value={s.end || ''} onChange={e => updateSlot(arr, setArr, i, 'end', e.target.value)}
-            disabled={!s.start}
-            className="w-full text-xs border border-gray-200 rounded px-2 py-1 bg-white disabled:bg-gray-50 disabled:text-gray-300">
-            <option value="">—</option>
-            {endOptions.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </td>
-      </tr>
-    );
-  }
-
-  async function handleSave() {
-    // Tüm satırların dolu olduğunu doğrula
-    for (const arr of [weekday, weekend]) {
-      for (const s of arr) {
-        if (!s.start || !s.end) {
-          showToast('Tüm saat alanlarını doldurun', 'error');
-          return;
-        }
-      }
-    }
-    setSaving(true);
-    try {
-      await api('/api/slot-times', { method: 'POST', body: JSON.stringify({ weekday, weekend }) });
-      setGlobalSlotTimes({ weekday, weekend });
-      showToast('Saatler kaydedildi ve uygulandı');
-      onClose();
-    } catch (e) {
-      showToast(e.message, 'error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (loading) return (
-    <Modal title="Ders Saatleri" onClose={onClose} wide>
-      <div className="text-center py-8 text-gray-400 text-sm">Yükleniyor...</div>
-    </Modal>
-  );
-
-  return (
-    <Modal title="Ders Saatleri" onClose={onClose} wide>
-      <p className="text-xs text-gray-500 mb-3">12 slot, 5 dakikalık periyotlar (09:00 – 19:20). Her satırın başlangıcı önceki bitişten sonra olmalı.</p>
-      <div className="grid md:grid-cols-2 gap-4">
-        <div>
-          <h4 className="text-xs font-700 text-gray-700 uppercase mb-1.5" style={{ fontWeight: 700 }}>Hafta İçi</h4>
-          <table className="w-full text-sm">
-            <tbody>{weekday.map((_, i) => renderRow(weekday, setWeekday, i))}</tbody>
-          </table>
-        </div>
-        <div>
-          <h4 className="text-xs font-700 text-gray-700 uppercase mb-1.5" style={{ fontWeight: 700 }}>Hafta Sonu</h4>
-          <table className="w-full text-sm">
-            <tbody>{weekend.map((_, i) => renderRow(weekend, setWeekend, i))}</tbody>
-          </table>
-        </div>
-      </div>
-      <div className="flex gap-3 mt-5">
-        <button className="btn-primary flex-1" onClick={handleSave} disabled={saving}>
-          {saving ? 'Kaydediliyor…' : 'Kaydet ve Uygula'}
-        </button>
-        <button className="btn-ghost" onClick={onClose}>İptal</button>
-      </div>
-    </Modal>
-  );
-}
-
 function ProgramEditor({ teacher, onClose, showToast, students }) {
   const currentWeek = getWeekKey();
   const maxWeek = getAdjacentWeek(getAdjacentWeek(currentWeek, 1), 1);
@@ -2054,7 +1925,6 @@ function DirectorPanel({ session, showToast }) {
   const [showTeacherForm, setShowTeacherForm] = useState(false);
   const [showStudentForm, setShowStudentForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [showSlotTimes, setShowSlotTimes] = useState(false);
   const [editTeacher, setEditTeacher] = useState(null);
   const [editStudent, setEditStudent] = useState(null);
   const [selectedTeacherForSlots, setSelectedTeacherForSlots] = useState(null);
@@ -2140,14 +2010,9 @@ function DirectorPanel({ session, showToast }) {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-700 text-lg" style={{ fontWeight:700 }}>Öğretmenler ({teachers.length})</h3>
-            <div className="flex gap-2">
-              <button className="btn-ghost !px-3 !py-2 flex items-center gap-1.5 text-sm" onClick={() => setShowSlotTimes(true)}>
-                <Clock size={14} /> Saatler
-              </button>
-              <button className="btn-primary !px-4 !py-2 flex items-center gap-1.5 text-sm" onClick={() => { setEditTeacher(null); setShowTeacherForm(true); }}>
-                <Plus size={14} /> Ekle
-              </button>
-            </div>
+            <button className="btn-primary !px-4 !py-2 flex items-center gap-1.5 text-sm" onClick={() => { setEditTeacher(null); setShowTeacherForm(true); }}>
+              <Plus size={14} /> Ekle
+            </button>
           </div>
           <div className="grid gap-2">
             {teachers.map(t => {
@@ -2340,9 +2205,6 @@ function DirectorPanel({ session, showToast }) {
       )}
       {showImport && (
         <ImportModal onClose={() => setShowImport(false)} showToast={showToast} onDone={() => { setShowImport(false); loadAll(weekKey); }} />
-      )}
-      {showSlotTimes && (
-        <SlotTimesEditor onClose={() => setShowSlotTimes(false)} showToast={showToast} />
       )}
     </div>
   );
@@ -3054,32 +2916,161 @@ function HistoryModal({ target, onClose, currentWeekKey, currentEntries }) {
   );
 }
 
-function DirectorNameModal({ current, onClose, onSave, showToast }) {
+function DirectorSettingsModal({ current, onClose, onSave, showToast }) {
+  // Üst: müdür adı
   const [name, setName] = useState(current || '');
-  const [loading, setLoading] = useState(false);
-  const submit = async e => {
+  const [savingName, setSavingName] = useState(false);
+
+  // Alt: ders saatleri
+  const [weekday, setWeekday] = useState([]);
+  const [weekend, setWeekend] = useState([]);
+  const [timesLoading, setTimesLoading] = useState(true);
+  const [savingTimes, setSavingTimes] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await api('/api/slot-times');
+        setWeekday(data.weekday || []);
+        setWeekend(data.weekend || []);
+      } catch (e) { showToast(e.message, 'error'); }
+      setTimesLoading(false);
+    })();
+  }, []);
+
+  const submitName = async e => {
     e.preventDefault();
     if (!name.trim()) return;
-    setLoading(true);
+    setSavingName(true);
     try {
       await api('/api/auth', { method: 'POST', body: JSON.stringify({ action: 'update_director_name', name: name.trim() }) });
       onSave(name.trim());
       showToast('İsim güncellendi');
-      onClose();
     } catch (err) { showToast(err.message, 'error'); }
-    finally { setLoading(false); }
+    finally { setSavingName(false); }
   };
+
+  const TIME_OPTIONS = useMemo(() => {
+    const out = [];
+    for (let h = 9; h <= 19; h++) {
+      for (let m = 0; m < 60; m += 5) {
+        if (h === 19 && m > 20) break;
+        out.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+      }
+    }
+    return out;
+  }, []);
+
+  function toMin(t) {
+    const [h, m] = t.split(':').map(n => parseInt(n));
+    return h * 60 + m;
+  }
+
+  function updateSlot(arr, setArr, i, field, value) {
+    const next = arr.map((s, idx) => idx === i ? { ...s, [field]: value } : s);
+    for (let j = i + 1; j < next.length; j++) {
+      if (toMin(next[j].start || '00:00') < toMin(next[j - 1].end || '00:00')) {
+        next[j] = { start: '', end: '' };
+      }
+    }
+    setArr(next);
+  }
+
+  function renderRow(arr, setArr, i) {
+    const s = arr[i];
+    const prevEnd = i > 0 ? arr[i - 1].end : null;
+    const startOptions = TIME_OPTIONS.filter(t => !prevEnd || toMin(t) >= toMin(prevEnd));
+    const endOptions = s.start ? TIME_OPTIONS.filter(t => toMin(t) > toMin(s.start)) : [];
+    return (
+      <tr key={i} className="border-t border-gray-50">
+        <td className="py-1 px-2 text-xs text-gray-400 w-10">{i + 1}.</td>
+        <td className="py-1 px-1">
+          <select value={s.start || ''} onChange={e => updateSlot(arr, setArr, i, 'start', e.target.value)}
+            className="w-full text-xs border border-gray-200 rounded px-2 py-1 bg-white">
+            <option value="">—</option>
+            {startOptions.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </td>
+        <td className="py-1 px-1 text-xs text-gray-400 text-center">–</td>
+        <td className="py-1 px-1">
+          <select value={s.end || ''} onChange={e => updateSlot(arr, setArr, i, 'end', e.target.value)}
+            disabled={!s.start}
+            className="w-full text-xs border border-gray-200 rounded px-2 py-1 bg-white disabled:bg-gray-50 disabled:text-gray-300">
+            <option value="">—</option>
+            {endOptions.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </td>
+      </tr>
+    );
+  }
+
+  async function saveTimes() {
+    for (const arr of [weekday, weekend]) {
+      for (const s of arr) {
+        if (!s.start || !s.end) {
+          showToast('Tüm saat alanlarını doldurun', 'error');
+          return;
+        }
+      }
+    }
+    setSavingTimes(true);
+    try {
+      await api('/api/slot-times', { method: 'POST', body: JSON.stringify({ weekday, weekend }) });
+      setGlobalSlotTimes({ weekday, weekend });
+      showToast('Saatler kaydedildi ve uygulandı');
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setSavingTimes(false);
+    }
+  }
+
   return (
-    <Modal title="İsmi Güncelle" onClose={onClose}>
-      <form onSubmit={submit} className="space-y-4">
-        <FormField label="Ad Soyad">
-          <input className="input" value={name} onChange={e => setName(e.target.value)} required autoFocus />
-        </FormField>
-        <div className="flex gap-3">
-          <button className="btn-primary flex-1" disabled={loading}>{loading ? 'Kaydediliyor...' : 'Kaydet'}</button>
-          <button type="button" className="btn-ghost" onClick={onClose}>İptal</button>
-        </div>
-      </form>
+    <Modal title="Ayarlar" onClose={onClose} wide>
+      {/* Üst: Müdür adı */}
+      <div className="mb-5 pb-5 border-b border-gray-100">
+        <h4 className="text-xs font-700 text-gray-700 uppercase tracking-wide mb-2" style={{ fontWeight: 700 }}>Müdür Bilgisi</h4>
+        <form onSubmit={submitName} className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="block text-[10px] font-600 text-gray-400 uppercase tracking-wide mb-1" style={{ fontWeight: 600 }}>Ad Soyad</label>
+            <input className="input" value={name} onChange={e => setName(e.target.value)} required />
+          </div>
+          <button type="submit" className="btn-primary !px-4 !py-2 text-sm" disabled={savingName}>
+            {savingName ? 'Kaydediliyor…' : 'Güncelle'}
+          </button>
+        </form>
+      </div>
+
+      {/* Alt: Ders saatleri */}
+      <div>
+        <h4 className="text-xs font-700 text-gray-700 uppercase tracking-wide mb-2" style={{ fontWeight: 700 }}>Ders Saatleri</h4>
+        <p className="text-[11px] text-gray-500 mb-3">12 slot, 5 dakikalık periyotlar (09:00 – 19:20). Her satırın başlangıcı önceki bitişten sonra olmalı.</p>
+        {timesLoading ? (
+          <div className="text-center py-6 text-gray-400 text-sm">Yükleniyor...</div>
+        ) : (
+          <>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <div className="text-[11px] font-600 text-gray-500 uppercase mb-1.5" style={{ fontWeight: 600 }}>Hafta İçi</div>
+                <table className="w-full text-sm">
+                  <tbody>{weekday.map((_, i) => renderRow(weekday, setWeekday, i))}</tbody>
+                </table>
+              </div>
+              <div>
+                <div className="text-[11px] font-600 text-gray-500 uppercase mb-1.5" style={{ fontWeight: 600 }}>Hafta Sonu</div>
+                <table className="w-full text-sm">
+                  <tbody>{weekend.map((_, i) => renderRow(weekend, setWeekend, i))}</tbody>
+                </table>
+              </div>
+            </div>
+            <div className="flex justify-end mt-4">
+              <button className="btn-primary !px-4 !py-2 text-sm" onClick={saveTimes} disabled={savingTimes}>
+                {savingTimes ? 'Kaydediliyor…' : 'Saatleri Kaydet'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </Modal>
   );
 }
@@ -3161,7 +3152,7 @@ export default function App() {
               </button>
             )}
             {session.role === 'director' && (
-              <button onClick={() => setShowDirectorName(true)} title="İsmi Güncelle" className="btn-ghost !px-3 !py-2">
+              <button onClick={() => setShowDirectorName(true)} title="Ayarlar" className="btn-ghost !px-3 !py-2">
                 <Settings size={14} />
               </button>
             )}
@@ -3178,7 +3169,7 @@ export default function App() {
         <ChangePasswordModal showToast={showToast} onClose={() => setShowChangePassword(false)} />
       )}
       {showDirectorName && (
-        <DirectorNameModal current={session.name} showToast={showToast}
+        <DirectorSettingsModal current={session.name} showToast={showToast}
           onClose={() => setShowDirectorName(false)}
           onSave={newName => setSession(s => ({ ...s, name: newName }))} />
       )}
