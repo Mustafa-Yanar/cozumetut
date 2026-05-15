@@ -1909,7 +1909,7 @@ function DirectorAttendanceView({ showToast }) {
             const allTaken = takenCount === totalCount;
             return (
               <button key={cls} onClick={() => setSelectedCls(cls)}
-                className="card aspect-square flex flex-col items-center justify-center gap-1.5 hover:shadow-lg hover:border-indigo-400 hover:-translate-y-0.5 hover:bg-indigo-50/30 transition-all duration-200 cursor-pointer p-3">
+                className="card aspect-square flex flex-col items-center justify-center gap-1.5 hover:shadow-lg hover:border-indigo-400 hover:-translate-y-px hover:bg-indigo-50/30 transition-all duration-200 cursor-pointer p-3">
                 <GraduationCap size={20} className="text-indigo-400" />
                 <span className="text-sm font-700 text-gray-900" style={{ fontWeight: 700 }}>{cls.toUpperCase()}</span>
                 <div className="flex flex-wrap gap-1 justify-center">
@@ -2044,7 +2044,7 @@ function DirectorPanel({ session, showToast }) {
               const isOpen = expandedTeacherId === t.id;
               const teacherBookings = allSlots.filter(s => s.booked && s.teacherId === t.id);
               return (
-                <div key={t.id} className={`card overflow-hidden transition-all duration-200 ${isOpen ? '' : 'hover:shadow-lg hover:border-indigo-400 hover:-translate-y-0.5 hover:bg-indigo-50/30'}`}>
+                <div key={t.id} className={`card overflow-hidden transition-all duration-200 ${isOpen ? '' : 'hover:shadow-lg hover:border-indigo-400 hover:-translate-y-px hover:bg-indigo-50/30'}`}>
                   <div className="flex items-center justify-between px-4 py-3.5">
                     <button className="flex items-center gap-3 text-left flex-1 min-w-0" onClick={async () => {
                       if (isOpen) { setExpandedTeacherId(null); return; }
@@ -2399,7 +2399,7 @@ function StudentList({ students, allSlots, weekKey, onCancelBooking, onEdit, onD
               {isOpen && (
                 <div className="grid gap-1.5 mt-1.5 ml-2">
                   {grp.students.map(s => (
-                    <div key={s.id} className={`card overflow-hidden text-sm transition-all duration-200 ${expandedId === s.id ? '' : 'hover:shadow-lg hover:border-indigo-400 hover:-translate-y-0.5 hover:bg-indigo-50/30'}`}>
+                    <div key={s.id} className={`card overflow-hidden text-sm transition-all duration-200 ${expandedId === s.id ? '' : 'hover:shadow-lg hover:border-indigo-400 hover:-translate-y-px hover:bg-indigo-50/30'}`}>
                       <div className="flex items-center justify-between px-3 py-3">
                         <button className="flex items-center gap-3 flex-1 min-w-0 text-left" onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}>
                           <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-700 shrink-0"
