@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import redis from '@/lib/redis';
 import { getSession } from '@/lib/auth';
 import { slotsForDay, ALL_DAYS, MEZUN_ONLY_LESSON_SLOTS, STUDENT_GROUPS } from '@/lib/constants';
-import { getWeekKey, slotKey, isEditableWeek, initWeekForTeacher } from '@/lib/slots';
+import { getWeekKey, slotKey, isEditableWeek, initWeekForTeacher, slotStartTime } from '@/lib/slots';
 
 // program:{teacherId} → ŞABLON (sabit ders/etüt, her hafta tekrar eder)
 // entry: { type: 'ders'|'etut'|null, cls?, studentId?, ..., fixed: true }
@@ -105,6 +105,21 @@ export async function POST(req) {
 
   if (!isEditableWeek(weekKey)) {
     return NextResponse.json({ error: 'Geçmiş hafta düzenlenemez. Sadece mevcut hafta ve sonraki 2 hafta düzenlenebilir.' }, { status: 400 });
+  }
+
+  // Geçmiş slotları diff'ten sessizce kaldır — frontend yanlışlıkla gönderirse
+  // mevcut etüt/ders kayıtlarına dokunulmaz.
+  for (const dayIdx of Object.keys(program)) {
+    const slots = slotsForDay(parseInt(dayIdx));
+    for (const slotId of Object.keys(program[dayIdx] || {})) {
+      const slotDef = slots.find(s => s.id === slotId);
+      if (!slotDef) continue;
+      const slotStart = slotStartTime(weekKey, parseInt(dayIdx), slotDef.label);
+      if (slotStart.getTime() <= Date.now()) {
+        delete program[dayIdx][slotId];
+      }
+    }
+    if (Object.keys(program[dayIdx]).length === 0) delete program[dayIdx];
   }
 
   // İzin günü kontrolü

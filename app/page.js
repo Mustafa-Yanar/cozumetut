@@ -890,16 +890,21 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
                     cellClass += 'bg-white border-dashed border-gray-200 hover:border-gray-300';
                   }
 
+                  const slotIsPast = isSlotPast(weekKey, day.index, slot.label);
+
                   if (isActive) cellClass += ' ring-2 ring-indigo-400';
+                  if (slotIsPast) cellClass += ' opacity-70 !cursor-not-allowed';
 
                   return (
                     <td key={day.index} className="py-0.5 px-0.5">
                       <div className="relative">
                         <button className={`w-full ${cellClass}`}
-                          onClick={() => setActiveCell(isActive ? null : { dayIndex: day.index, slotId: slot.id })}>
+                          disabled={slotIsPast}
+                          title={slotIsPast ? 'Bu saat dilimi geçmiş — düzenlenemez' : ''}
+                          onClick={() => !slotIsPast && setActiveCell(isActive ? null : { dayIndex: day.index, slotId: slot.id })}>
                           {cellContent}
                         </button>
-                        {type && (
+                        {type && !slotIsPast && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
