@@ -1100,7 +1100,7 @@ function TeacherPanel({ session, showToast }) {
       ]);
       setSlots(slotsData.grid);
       setStudents(stuData);
-      setProgram(progData || {});
+      setProgram(progData?.program || {});
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
@@ -1112,8 +1112,12 @@ function TeacherPanel({ session, showToast }) {
 
   const handleWeekChange = async (newWeek) => {
     setWeekKey(newWeek);
-    const data = await api(`/api/slots?teacherId=${session.id}&week=${newWeek}`);
-    setSlots(data.grid);
+    const [slotsData, progData] = await Promise.all([
+      api(`/api/slots?teacherId=${session.id}&week=${newWeek}`),
+      api(`/api/program?teacherId=${session.id}&week=${newWeek}`),
+    ]);
+    setSlots(slotsData.grid);
+    setProgram(progData?.program || {});
   };
 
   const handleBook = async (params) => {
