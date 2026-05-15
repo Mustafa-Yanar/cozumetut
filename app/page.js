@@ -24,14 +24,65 @@ function classNeedsSubBranch(cls) {
 // Rehberlik için ders listesi
 function guidanceSubjectsFor(cls) {
   if (!cls) return [];
+  // Ortaokul
   if (cls.startsWith('7')) {
     return ['Türkçe', 'Matematik', 'Fen Bilgisi', 'Sosyal Bilgiler', 'İngilizce'];
   }
   if (cls.startsWith('8')) {
     return ['Türkçe', 'Matematik', 'Fen Bilgisi', 'İnkılap Tarihi', 'İngilizce'];
   }
-  // 9-12 ve mezun: lise dersleri
-  return ['Türkçe', 'Edebiyat', 'TYT Matematik', 'AYT Matematik', 'Geometri', 'Fizik', 'Kimya', 'Biyoloji', 'Tarih', 'Coğrafya', 'Felsefe'];
+  // Sayısal/EA türünü çıkar
+  let isSayisal = false;
+  let isEA = false;
+  let grade = 0;
+  if (cls.startsWith('m')) {
+    const n = parseInt(cls.slice(1));
+    isSayisal = n <= 5;
+    isEA = n > 5;
+    grade = 12; // mezun = 12. sınıf benzeri
+  } else {
+    grade = Math.floor(parseInt(cls) / 100);
+    const sec = parseInt(cls.slice(1));
+    if (grade === 3) { isSayisal = sec <= 3; isEA = sec > 3; }
+    if (grade === 4) { isSayisal = sec <= 5; isEA = sec > 5; }
+  }
+  // 9-10. sınıflar
+  if (grade === 1 || grade === 2) {
+    return ['Türkçe', 'Matematik', 'Fizik', 'Kimya', 'Biyoloji', 'Tarih', 'Coğrafya', 'Felsefe'];
+  }
+  // 11. sınıf
+  if (grade === 3) {
+    if (isSayisal) return ['Türkçe', 'Matematik', 'Fizik', 'Kimya', 'Biyoloji'];
+    return ['Türkçe', 'Matematik', 'Tarih', 'Coğrafya', 'Felsefe'];
+  }
+  // 12. sınıf veya mezun
+  if (isSayisal) {
+    return [
+      'Türkçe',
+      'TYT Matematik', 'AYT Matematik', 'Geometri',
+      'TYT Fizik', 'AYT Fizik',
+      'TYT Kimya', 'AYT Kimya',
+      'TYT Biyoloji', 'AYT Biyoloji',
+      'TYT Tarih',
+      'TYT Coğrafya',
+      'TYT Felsefe',
+      'Din Kültürü',
+    ];
+  }
+  if (isEA) {
+    return [
+      'Türkçe', 'Edebiyat',
+      'TYT Matematik', 'AYT Matematik', 'Geometri',
+      'TYT Fizik',
+      'TYT Kimya',
+      'TYT Biyoloji',
+      'TYT Tarih', 'AYT Tarih',
+      'TYT Coğrafya', 'AYT Coğrafya',
+      'TYT Felsefe', 'AYT Felsefe',
+      'Din Kültürü',
+    ];
+  }
+  return [];
 }
 
 function allowedBranchesForClass(cls) {
@@ -2337,17 +2388,11 @@ function StudentGuidancePanel({ session, showToast }) {
               <th className="text-center text-xs text-emerald-600 font-600 py-2.5 px-2" style={{ fontWeight: 600 }}>Doğru</th>
               <th className="text-center text-xs text-red-600 font-600 py-2.5 px-2" style={{ fontWeight: 600 }}>Yanlış</th>
               <th className="text-center text-xs text-gray-500 font-600 py-2.5 px-2" style={{ fontWeight: 600 }}>Boş</th>
-              <th className="text-center text-xs text-indigo-600 font-600 py-2.5 px-2" style={{ fontWeight: 600 }}>Net / Toplam</th>
             </tr>
           </thead>
           <tbody>
             {subjects.map(subject => {
               const val = entries[subject] || { correct: '', wrong: '', empty: '' };
-              const c = parseInt(val.correct) || 0;
-              const w = parseInt(val.wrong) || 0;
-              const em = parseInt(val.empty) || 0;
-              const net = c - w / 4;
-              const total = c + w + em;
               return (
                 <tr key={subject} className="border-t border-gray-50">
                   <td className="px-3 py-2 text-sm text-gray-700 font-500" style={{ fontWeight: 500 }}>{subject}</td>
@@ -2357,9 +2402,6 @@ function StudentGuidancePanel({ session, showToast }) {
                     className="w-16 text-center text-sm border border-gray-200 rounded-lg py-1.5 focus:border-red-400 focus:outline-none" /></td>
                   <td className="px-2 py-2"><input type="number" min="0" inputMode="numeric" value={val.empty} onChange={e => setVal(subject, 'empty', e.target.value)}
                     className="w-16 text-center text-sm border border-gray-200 rounded-lg py-1.5 focus:border-gray-400 focus:outline-none" /></td>
-                  <td className="px-2 py-2 text-center text-xs text-gray-500">
-                    {total > 0 ? <><span className="font-700 text-indigo-700" style={{ fontWeight: 700 }}>{net.toFixed(2)}</span> / {total}</> : '—'}
-                  </td>
                 </tr>
               );
             })}
@@ -2633,9 +2675,8 @@ function StudentGuidanceView({ studentId, onReviewed }) {
     <div className="space-y-3">
       {weeks.map(w => {
         const entries = Object.entries(w.entries || {});
-        let totalNet = 0, totalSolved = 0;
+        let totalSolved = 0;
         entries.forEach(([, v]) => {
-          totalNet += (v.correct || 0) - (v.wrong || 0) / 4;
           totalSolved += (v.correct || 0) + (v.wrong || 0) + (v.empty || 0);
         });
         return (
@@ -2664,26 +2705,20 @@ function StudentGuidanceView({ studentId, onReviewed }) {
                     <th className="text-center text-[10px] uppercase text-emerald-600 font-600 py-1.5 px-2" style={{ fontWeight: 600 }}>D</th>
                     <th className="text-center text-[10px] uppercase text-red-600 font-600 py-1.5 px-2" style={{ fontWeight: 600 }}>Y</th>
                     <th className="text-center text-[10px] uppercase text-gray-500 font-600 py-1.5 px-2" style={{ fontWeight: 600 }}>B</th>
-                    <th className="text-center text-[10px] uppercase text-indigo-600 font-600 py-1.5 px-2" style={{ fontWeight: 600 }}>Net</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {entries.map(([subject, v]) => {
-                    const net = (v.correct || 0) - (v.wrong || 0) / 4;
-                    return (
-                      <tr key={subject} className="border-b border-gray-50 last:border-0">
-                        <td className="py-1.5 px-3 text-xs text-gray-700 font-500" style={{ fontWeight: 500 }}>{subject}</td>
-                        <td className="py-1.5 px-2 text-xs text-center text-emerald-700 font-600" style={{ fontWeight: 600 }}>{v.correct || 0}</td>
-                        <td className="py-1.5 px-2 text-xs text-center text-red-700 font-600" style={{ fontWeight: 600 }}>{v.wrong || 0}</td>
-                        <td className="py-1.5 px-2 text-xs text-center text-gray-600">{v.empty || 0}</td>
-                        <td className="py-1.5 px-2 text-xs text-center text-indigo-700 font-700" style={{ fontWeight: 700 }}>{net.toFixed(2)}</td>
-                      </tr>
-                    );
-                  })}
+                  {entries.map(([subject, v]) => (
+                    <tr key={subject} className="border-b border-gray-50 last:border-0">
+                      <td className="py-1.5 px-3 text-xs text-gray-700 font-500" style={{ fontWeight: 500 }}>{subject}</td>
+                      <td className="py-1.5 px-2 text-xs text-center text-emerald-700 font-600" style={{ fontWeight: 600 }}>{v.correct || 0}</td>
+                      <td className="py-1.5 px-2 text-xs text-center text-red-700 font-600" style={{ fontWeight: 600 }}>{v.wrong || 0}</td>
+                      <td className="py-1.5 px-2 text-xs text-center text-gray-600">{v.empty || 0}</td>
+                    </tr>
+                  ))}
                   <tr className="bg-gray-50">
                     <td className="py-1.5 px-3 text-xs font-700 text-gray-700" style={{ fontWeight: 700 }}>Toplam</td>
-                    <td colSpan={3} className="py-1.5 px-2 text-[11px] text-center text-gray-500">{totalSolved} soru</td>
-                    <td className="py-1.5 px-2 text-xs text-center text-indigo-700 font-700" style={{ fontWeight: 700 }}>{totalNet.toFixed(2)}</td>
+                    <td colSpan={3} className="py-1.5 px-2 text-[11px] text-center text-indigo-700 font-700" style={{ fontWeight: 700 }}>{totalSolved} soru</td>
                   </tr>
                 </tbody>
               </table>
