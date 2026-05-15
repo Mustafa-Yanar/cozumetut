@@ -755,20 +755,21 @@ function TeacherAttendancePanel({ session, weekKey, showToast }) {
   const [attendance, setAttendance] = useState({});
   const [saving, setSaving] = useState({});
 
-  // Haftanın Pazartesi tarihini hesapla
-  const mondayDate = useMemo(() => {
+  // Haftanın Pazartesi tarihini hesapla (UTC-safe, sadece YYYY-MM-DD)
+  const mondayYMD = useMemo(() => {
     const [year, wStr] = weekKey.split('-W');
     const week = parseInt(wStr);
-    const jan4 = new Date(parseInt(year), 0, 4);
-    const dow = jan4.getDay() || 7;
+    // UTC bazında 4 Ocak'tan ISO hafta hesabı
+    const jan4 = new Date(Date.UTC(parseInt(year), 0, 4));
+    const dow = jan4.getUTCDay() || 7;
     const mon = new Date(jan4);
-    mon.setDate(jan4.getDate() - dow + 1 + (week - 1) * 7);
+    mon.setUTCDate(jan4.getUTCDate() - dow + 1 + (week - 1) * 7);
     return mon;
   }, [weekKey]);
 
   function dateForDay(dayIndex) {
-    const d = new Date(mondayDate);
-    d.setDate(mondayDate.getDate() + dayIndex);
+    const d = new Date(mondayYMD);
+    d.setUTCDate(mondayYMD.getUTCDate() + dayIndex);
     return d.toISOString().slice(0, 10);
   }
 
@@ -1502,13 +1503,17 @@ function DirectorAttendanceView({ showToast }) {
   const [loading, setLoading] = useState(false);
   const [selectedCls, setSelectedCls] = useState(null);
 
-  // Seçili güne ait tarih (bu haftanın)
+  // Seçili güne ait tarih (bu ISO haftanın o günü, UTC-safe)
   const dateForSelectedDay = useMemo(() => {
-    const d = new Date();
-    const jsDay = d.getDay();
-    const currentDayIndex = jsDay === 0 ? 6 : jsDay - 1;
-    d.setDate(d.getDate() + (selectedDay - currentDayIndex));
-    return d.toISOString().slice(0, 10);
+    const wk = getWeekKey();
+    const [year, wStr] = wk.split('-W');
+    const week = parseInt(wStr);
+    const jan4 = new Date(Date.UTC(parseInt(year), 0, 4));
+    const dow = jan4.getUTCDay() || 7;
+    const mon = new Date(jan4);
+    mon.setUTCDate(jan4.getUTCDate() - dow + 1 + (week - 1) * 7);
+    mon.setUTCDate(mon.getUTCDate() + selectedDay);
+    return mon.toISOString().slice(0, 10);
   }, [selectedDay]);
 
   useEffect(() => {
