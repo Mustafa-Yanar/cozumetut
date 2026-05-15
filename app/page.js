@@ -2152,9 +2152,9 @@ function DirectorPanel({ session, showToast }) {
                   </div>
                   {isOpen && (
                     <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
-                      <div className="flex items-center justify-between mb-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                         <WeekNav weekKey={weekKey} onPrev={() => handleWeekChange(getAdjacentWeek(weekKey,-1))} onNext={() => handleWeekChange(getAdjacentWeek(weekKey,1))} />
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           <button className="btn-ghost !px-3 !py-1.5 flex items-center gap-1.5 text-sm text-gray-600" onClick={() => setHistoryTarget({ type: 'teacher', id: t.id, name: t.name })}>
                             <Clock size={13} /> Geçmiş
                           </button>
