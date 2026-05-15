@@ -338,17 +338,22 @@ function SlotGrid({ grid, program, teacher, weekKey, session, students, onBook, 
 
 function SlotCell({ slotData, progEntry, slot, dayIndex, slotIdx, session, teacher, onCellClick, onCancel, weekKey }) {
   const isDirector = session.role === 'director';
-  const isLesson = progEntry?.type === 'ders';
+  // Ders slotu: hem program şablonundan (progEntry) hem grid'den (slotData.lessonType) gelebilir
+  const isLessonFromProg = progEntry?.type === 'ders';
+  const isLessonFromGrid = slotData?.lessonType === 'ders';
+  const isLesson = isLessonFromProg || isLessonFromGrid;
+  const lessonCls = isLessonFromProg ? progEntry.cls : slotData?.cls;
+  const lessonIsTemp = slotData?.lessonType === 'ders' && slotData.fixed === false;
 
   if (slotData.disabled) {
     // Ders slotu: sınıf bilgisini göster
     if (isLesson) {
-      const cls = progEntry.cls ? progEntry.cls.toUpperCase() : '—';
+      const cls = lessonCls ? lessonCls.toUpperCase() : '—';
       return (
         <td className="py-1 px-1">
-          <div className="rounded-lg py-1.5 px-1 text-center bg-blue-50 border border-blue-100 select-none">
+          <div className={`rounded-lg py-1.5 px-1 text-center bg-blue-50 border select-none ${lessonIsTemp ? 'border-dashed border-blue-300' : 'border-blue-100'}`}>
             <div className="text-[10px] font-600 text-blue-700 truncate" style={{ fontWeight: 600 }}>{cls}</div>
-            <div className="text-[9px] text-blue-400">Ders</div>
+            <div className="text-[9px] text-blue-400">{lessonIsTemp ? 'Geçici ders' : 'Ders'}</div>
           </div>
         </td>
       );
@@ -425,24 +430,35 @@ function SlotCell({ slotData, progEntry, slot, dayIndex, slotIdx, session, teach
 // ─── PROGRAM EDİTÖRÜ (Ders + Etüt birleşik) ────────────────────────────────────
 // program[dayIndex][slotId] = { type: 'ders'|'etut'|null, cls?, studentId?, studentName?, studentCls?, fixed? }
 function ProgramEditor({ teacher, onClose, showToast, students }) {
+  const currentWeek = getWeekKey();
+  const maxWeek = getAdjacentWeek(getAdjacentWeek(currentWeek, 1), 1);
+  const [weekKey, setWeekKey] = useState(currentWeek);
   const [program, setProgram] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  // activeCell: { dayIndex, slotId } — hangi hücre seçili
   const [activeCell, setActiveCell] = useState(null);
+  // O an düzenlenmekte olan program'da "değişen" entry'leri takip et:
+  // sadece bu değişiklikler POST'a gönderilir
+  const [dirty, setDirty] = useState({}); // { `${dayIdx}:${slotId}`: entry | null }
 
   useEffect(() => {
+    setLoading(true);
+    setActiveCell(null);
+    setDirty({});
     (async () => {
       try {
-        const data = await api(`/api/program?teacherId=${teacher.id}`);
-        setProgram(data);
+        const data = await api(`/api/program?teacherId=${teacher.id}&week=${weekKey}`);
+        setProgram(data.program || {});
       } catch {
         setProgram({});
       } finally {
         setLoading(false);
       }
     })();
-  }, [teacher.id]);
+  }, [teacher.id, weekKey]);
+
+  const canPrev = weekKey !== currentWeek;
+  const canNext = weekKey !== maxWeek;
 
   function getEntry(dayIndex, slotId) {
     return program?.[String(dayIndex)]?.[slotId] || null;
@@ -456,6 +472,7 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
         [slotId]: entry,
       },
     }));
+    setDirty(prev => ({ ...prev, [`${dayIndex}:${slotId}`]: entry }));
   }
 
   function clearEntry(dayIndex, slotId) {
@@ -464,12 +481,20 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
       delete day[slotId];
       return { ...prev, [String(dayIndex)]: day };
     });
+    setDirty(prev => ({ ...prev, [`${dayIndex}:${slotId}`]: null }));
   }
 
   async function handleSave() {
     setSaving(true);
     try {
-      await api('/api/program', { method: 'POST', body: JSON.stringify({ teacherId: teacher.id, program }) });
+      // Sadece değişen entry'leri gönder
+      const diff = {};
+      for (const [key, entry] of Object.entries(dirty)) {
+        const [dayIdx, slotId] = key.split(':');
+        if (!diff[dayIdx]) diff[dayIdx] = {};
+        diff[dayIdx][slotId] = entry;
+      }
+      await api('/api/program', { method: 'POST', body: JSON.stringify({ teacherId: teacher.id, weekKey, program: diff }) });
       showToast('Program kaydedildi ve uygulandı');
       onClose();
     } catch (err) {
@@ -493,14 +518,15 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
     const [studentId, setStudentId] = useState(existing?.studentId || '');
     const [studentName, setStudentName] = useState(existing?.studentName || '');
     const [studentCls, setStudentCls] = useState(existing?.studentCls || '');
-    const [fixed, setFixed] = useState(existing?.fixed || false);
+    // fixed: yeni entry için varsayılan true (her hafta tekrar etsin)
+    const [fixed, setFixed] = useState(existing?.fixed !== false);
     const [studentSearch, setStudentSearch] = useState('');
     const [clsError, setClsError] = useState(false);
 
     function handleSaveClick() {
       if (type === 'ders') {
         if (!cls) { setClsError(true); return; }
-        setEntry(dayIndex, slotId, { type: 'ders', cls });
+        setEntry(dayIndex, slotId, { type: 'ders', cls, fixed });
       } else if (type === 'etut') {
         setEntry(dayIndex, slotId, { type: 'etut', studentId, studentName, studentCls, fixed });
       }
@@ -537,6 +563,14 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
               ).map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
             </select>
             {clsError && <p className="text-xs text-red-500 mt-1">Sınıf seçilmeden ders eklenemez.</p>}
+            <label className="flex items-center gap-2 cursor-pointer select-none mt-2">
+              <input type="checkbox" checked={fixed} onChange={e => setFixed(e.target.checked)}
+                className="w-4 h-4 rounded accent-indigo-600" />
+              <span className="text-xs text-gray-700">Sabit (her hafta tekrar etsin)</span>
+            </label>
+            {!fixed && (
+              <p className="text-[10px] text-amber-600 mt-1">Bu ders yalnızca seçili haftaya uygulanır.</p>
+            )}
           </div>
         )}
 
@@ -576,11 +610,16 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
               </div>
             </div>
             {studentId && (
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" checked={fixed} onChange={e => setFixed(e.target.checked)}
-                  className="w-4 h-4 rounded accent-indigo-600" />
-                <span className="text-xs text-gray-700">Sabit rezervasyon (her hafta tekrar)</span>
-              </label>
+              <>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="checkbox" checked={fixed} onChange={e => setFixed(e.target.checked)}
+                    className="w-4 h-4 rounded accent-indigo-600" />
+                  <span className="text-xs text-gray-700">Sabit rezervasyon (her hafta tekrar)</span>
+                </label>
+                {!fixed && (
+                  <p className="text-[10px] text-amber-600">Bu rezervasyon yalnızca seçili haftaya uygulanır.</p>
+                )}
+              </>
             )}
           </div>
         )}
@@ -596,14 +635,40 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
     );
   }
 
+  const weekNav = (
+    <div className="flex items-center justify-between mb-3 px-1">
+      <button
+        onClick={() => canPrev && setWeekKey(getAdjacentWeek(weekKey, -1))}
+        disabled={!canPrev}
+        className={`btn-ghost !p-2 ${!canPrev ? 'opacity-30 cursor-not-allowed' : ''}`}>
+        <ChevronLeft size={16} />
+      </button>
+      <div className="text-xs text-gray-700 text-center">
+        <div className="font-600" style={{ fontWeight: 600 }}>
+          {(() => { const r = weekRangeLabel(weekKey); return `${r.startStr} – ${r.endStr} ${r.yearStr}`; })()}
+        </div>
+        {weekKey === currentWeek && <div className="text-[10px] text-indigo-500 mt-0.5">Bu hafta</div>}
+        {weekKey !== currentWeek && <div className="text-[10px] text-amber-600 mt-0.5">İleri hafta — geçici değişiklikler bu haftaya uygulanır</div>}
+      </div>
+      <button
+        onClick={() => canNext && setWeekKey(getAdjacentWeek(weekKey, 1))}
+        disabled={!canNext}
+        className={`btn-ghost !p-2 ${!canNext ? 'opacity-30 cursor-not-allowed' : ''}`}>
+        <ChevronRight size={16} />
+      </button>
+    </div>
+  );
+
   if (loading) return (
     <Modal title={`${teacher.name} – Program`} onClose={onClose} wide>
+      {weekNav}
       <div className="text-center py-8 text-gray-400">Yükleniyor...</div>
     </Modal>
   );
 
   return (
     <Modal title={`${teacher.name} – Program`} onClose={onClose} wide>
+      {weekNav}
       <div className="overflow-x-auto">
         <table className="w-full text-sm border-collapse">
           <thead>
@@ -635,16 +700,26 @@ function ProgramEditor({ teacher, onClose, showToast, students }) {
                   let cellClass = 'h-9 rounded-lg border text-xs font-500 transition-all cursor-pointer flex items-center justify-center px-1 ';
                   let cellContent = <span className="text-gray-300">+</span>;
 
+                  const isTemp = entry?.fixed === false;
                   if (type === 'ders') {
-                    cellClass += 'bg-blue-50 border-blue-200 text-blue-700';
-                    cellContent = <span className="truncate text-[10px] font-600" style={{ fontWeight: 600 }}>{entry.cls ? entry.cls.toUpperCase() : 'Ders'}</span>;
+                    cellClass += isTemp
+                      ? 'bg-blue-50 border-dashed border-blue-300 text-blue-700'
+                      : 'bg-blue-50 border-blue-200 text-blue-700';
+                    cellContent = (
+                      <div className="text-center leading-tight">
+                        <div className="truncate text-[10px] font-600" style={{ fontWeight: 600 }}>{entry.cls ? entry.cls.toUpperCase() : 'Ders'}</div>
+                        {isTemp && <div className="text-[8px] text-amber-600">Geçici</div>}
+                      </div>
+                    );
                   } else if (type === 'etut') {
                     if (entry.studentId) {
-                      cellClass += 'bg-emerald-50 border-emerald-200 text-emerald-700';
+                      cellClass += isTemp
+                        ? 'bg-emerald-50 border-dashed border-emerald-300 text-emerald-700'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-700';
                       cellContent = (
                         <div className="text-center leading-tight">
                           <div className="text-[9px] truncate font-600" style={{ fontWeight: 600 }}>{entry.studentName}</div>
-                          {entry.fixed && <div className="text-[8px] text-violet-500">Sabit</div>}
+                          {isTemp && <div className="text-[8px] text-amber-600">Geçici</div>}
                         </div>
                       );
                     } else {
