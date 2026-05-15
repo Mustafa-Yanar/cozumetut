@@ -1209,12 +1209,7 @@ function TeacherPanel({ session, showToast }) {
       )}
 
       {activeTab === 'yoklama' && (
-        <>
-          <div className="flex justify-end mb-4">
-            <WeekNav weekKey={weekKey} onPrev={() => handleWeekChange(getAdjacentWeek(weekKey,-1))} onNext={() => handleWeekChange(getAdjacentWeek(weekKey,1))} />
-          </div>
-          <TeacherAttendancePanel session={session} weekKey={weekKey} showToast={showToast} />
-        </>
+        <TeacherAttendancePanel session={session} weekKey={getWeekKey()} showToast={showToast} />
       )}
     </div>
   );
