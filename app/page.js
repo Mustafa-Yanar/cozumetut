@@ -838,7 +838,7 @@ function TeacherAttendancePanel({ session, weekKey, showToast }) {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openDays, setOpenDays] = useState({});
-  const [openClasses, setOpenClasses] = useState({});
+  const [openLessons, setOpenLessons] = useState({});
   // attendance: { [`${date}_${cls}_${lessonNo}`]: { studentId: 'var'|'gec'|'yok' } }
   const [attendance, setAttendance] = useState({});
   const [saving, setSaving] = useState({});
@@ -879,30 +879,24 @@ function TeacherAttendancePanel({ session, weekKey, showToast }) {
     })();
   }, [session.id, weekKey]);
 
-  // program'daki ders slotlarından gün → ordered [{cls, lessonNos}] listesi
+  // program'daki ders slotlarından gün → sırayla [{lessonNo, cls}] listesi
   // lessonNo: o günün slot listesindeki ders slotunun sıra numarası (1'den başlar)
-  // Sıra: programdaki ders slotlarının çıkış sırası (ilk geçtiği yere göre)
   const days = useMemo(() => {
     if (!program) return [];
     return ALL_DAYS.map(day => {
       const dayProg = program[String(day.index)] || {};
       const slots = slotsForDay(day.index);
-      const order = [];
-      const idx = {}; // cls → order index
+      const lessons = [];
       let lessonNo = 0;
       for (const slot of slots) {
         const entry = dayProg[slot.id];
         if (entry?.type === 'ders' && entry.cls) {
           lessonNo++;
-          if (idx[entry.cls] === undefined) {
-            idx[entry.cls] = order.length;
-            order.push({ cls: entry.cls, lessonNos: [] });
-          }
-          order[idx[entry.cls]].lessonNos.push(lessonNo);
+          lessons.push({ lessonNo, cls: entry.cls });
         }
       }
-      if (order.length === 0) return null;
-      return { dayIndex: day.index, dayLabel: day.label, clsList: order };
+      if (lessons.length === 0) return null;
+      return { dayIndex: day.index, dayLabel: day.label, lessons };
     }).filter(Boolean);
   }, [program]);
 
@@ -926,16 +920,13 @@ function TeacherAttendancePanel({ session, weekKey, showToast }) {
     setOpenDays(p => ({ ...p, [dayIndex]: !p[dayIndex] }));
   }
 
-  function toggleClass(dayIndex, cls) {
-    const key = `${dayIndex}_${cls}`;
-    if (!openClasses[key]) {
+  function toggleLesson(dayIndex, lessonNo, cls) {
+    const key = `${dayIndex}_${lessonNo}`;
+    if (!openLessons[key]) {
       const date = dateForDay(dayIndex);
-      // O sınıfın o güne ait ders numaralarını bul
-      const dayData = days.find(d => d.dayIndex === dayIndex);
-      const lessonNos = dayData?.clsList?.find(c => c.cls === cls)?.lessonNos || [];
-      lessonNos.forEach(ln => loadAttendance(date, cls, ln));
+      loadAttendance(date, cls, lessonNo);
     }
-    setOpenClasses(p => ({ ...p, [key]: !p[key] }));
+    setOpenLessons(p => ({ ...p, [key]: !p[key] }));
   }
 
   function setStatus(date, cls, lessonNo, studentId, status) {
@@ -985,7 +976,8 @@ function TeacherAttendancePanel({ session, weekKey, showToast }) {
     <div className="space-y-2">
       {days.map(day => {
         const dOpen = !!openDays[day.dayIndex];
-        const clsList = day.clsList;
+        const lessons = day.lessons;
+        const date = dateForDay(day.dayIndex);
         return (
           <div key={day.dayIndex} className="card overflow-hidden">
             <button onClick={() => toggleDay(day.dayIndex)}
@@ -997,7 +989,7 @@ function TeacherAttendancePanel({ session, weekKey, showToast }) {
                 </div>
                 <div className="text-left">
                   <div className="font-700 text-gray-900 text-sm" style={{ fontWeight: 700 }}>{day.dayLabel}</div>
-                  <div className="text-xs text-gray-500">{clsList.length} sınıf</div>
+                  <div className="text-xs text-gray-500">{lessons.length} ders</div>
                 </div>
               </div>
               <ChevronRight size={16} className="text-gray-400 shrink-0 transition-transform" style={{ transform: dOpen ? 'rotate(90deg)' : 'rotate(0)' }} />
@@ -1005,71 +997,63 @@ function TeacherAttendancePanel({ session, weekKey, showToast }) {
 
             {dOpen && (
               <div className="border-t border-gray-100 px-3 py-2 space-y-1.5">
-                {clsList.map(({ cls, lessonNos }) => {
-                  const ck = `${day.dayIndex}_${cls}`;
-                  const cOpen = !!openClasses[ck];
+                {lessons.map(({ lessonNo, cls }) => {
+                  const lk = `${day.dayIndex}_${lessonNo}`;
+                  const lOpen = !!openLessons[lk];
                   const stuList = studentsForCls(cls);
-                  const date = dateForDay(day.dayIndex);
+                  const attKey = `${date}_${cls}_${lessonNo}`;
+                  const att = attendance[attKey] || {};
 
                   return (
-                    <div key={cls} className="rounded-xl overflow-hidden border border-gray-100">
-                      <button onClick={() => toggleClass(day.dayIndex, cls)}
+                    <div key={lessonNo} className="rounded-xl overflow-hidden border border-gray-100">
+                      <button onClick={() => toggleLesson(day.dayIndex, lessonNo, cls)}
                         className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors">
                         <div className="flex items-center gap-2">
-                          <GraduationCap size={14} className="text-indigo-500 shrink-0" />
-                          <span className="text-sm font-600 text-gray-800" style={{ fontWeight: 600 }}>{cls.toUpperCase()}</span>
-                          <span className="text-xs text-gray-400">{stuList.length} öğrenci · {lessonNos.length} ders</span>
+                          <span className="text-sm font-600 text-gray-800" style={{ fontWeight: 600 }}>{lessonNo}. Ders</span>
+                          <span className="text-xs text-indigo-600 font-600" style={{ fontWeight: 600 }}>({cls.toUpperCase()})</span>
+                          <span className="text-xs text-gray-400">{stuList.length} öğrenci</span>
                         </div>
-                        <ChevronRight size={14} className="text-gray-400 shrink-0 transition-transform" style={{ transform: cOpen ? 'rotate(90deg)' : 'rotate(0)' }} />
+                        <ChevronRight size={14} className="text-gray-400 shrink-0 transition-transform" style={{ transform: lOpen ? 'rotate(90deg)' : 'rotate(0)' }} />
                       </button>
 
-                      {cOpen && (
-                        <div className="bg-white">
-                          {lessonNos.map(ln => {
-                            const attKey = `${date}_${cls}_${ln}`;
-                            const att = attendance[attKey] || {};
-                            return (
-                              <div key={ln} className="px-3 py-2 border-b border-gray-50 last:border-0">
-                                <div className="text-[11px] font-600 text-indigo-600 mb-2" style={{ fontWeight: 600 }}>{ln}. Ders</div>
-                                {stuList.length === 0 ? (
-                                  <p className="text-xs text-gray-400 py-1">Bu sınıfta kayıtlı öğrenci yok.</p>
-                                ) : (
-                                  <>
-                                    <div className="space-y-1 mb-2">
-                                      {stuList.map(student => {
-                                        const current = att[student.id];
-                                        return (
-                                          <div key={student.id} className="flex items-center justify-between py-1">
-                                            <div className="flex items-center gap-2 min-w-0">
-                                              <User size={12} className="text-gray-400 shrink-0" />
-                                              <span className="text-sm text-gray-800 truncate">{student.name}</span>
-                                            </div>
-                                            <div className="flex gap-1 shrink-0 ml-2">
-                                              {STATUS_OPTS.map(opt => (
-                                                <button key={opt.value}
-                                                  onClick={() => setStatus(date, cls, ln, student.id, opt.value)}
-                                                  className={`text-[11px] px-2.5 py-1 rounded-lg border font-600 transition-all ${current === opt.value ? opt.active : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}
-                                                  style={{ fontWeight: 600 }}>
-                                                  {opt.label}
-                                                </button>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
+                      {lOpen && (
+                        <div className="bg-white px-3 py-2">
+                          {stuList.length === 0 ? (
+                            <p className="text-xs text-gray-400 py-1">Bu sınıfta kayıtlı öğrenci yok.</p>
+                          ) : (
+                            <>
+                              <div className="space-y-1 mb-2">
+                                {stuList.map(student => {
+                                  const current = att[student.id];
+                                  return (
+                                    <div key={student.id} className="flex items-center justify-between py-1">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <User size={12} className="text-gray-400 shrink-0" />
+                                        <span className="text-sm text-gray-800 truncate">{student.name}</span>
+                                      </div>
+                                      <div className="flex gap-1 shrink-0 ml-2">
+                                        {STATUS_OPTS.map(opt => (
+                                          <button key={opt.value}
+                                            onClick={() => setStatus(date, cls, lessonNo, student.id, opt.value)}
+                                            className={`text-[11px] px-2.5 py-1 rounded-lg border font-600 transition-all ${current === opt.value ? opt.active : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}
+                                            style={{ fontWeight: 600 }}>
+                                            {opt.label}
+                                          </button>
+                                        ))}
+                                      </div>
                                     </div>
-                                    <button
-                                      onClick={() => saveAttendance(day.dayIndex, cls, ln)}
-                                      disabled={saving[`${date}_${cls}_${ln}`]}
-                                      className="w-full py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-600 hover:bg-indigo-700 transition-colors disabled:opacity-60"
-                                      style={{ fontWeight: 600 }}>
-                                      {saving[`${date}_${cls}_${ln}`] ? 'Kaydediliyor...' : `${ln}. Ders Yoklamasını Kaydet`}
-                                    </button>
-                                  </>
-                                )}
+                                  );
+                                })}
                               </div>
-                            );
-                          })}
+                              <button
+                                onClick={() => saveAttendance(day.dayIndex, cls, lessonNo)}
+                                disabled={saving[attKey]}
+                                className="w-full py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-600 hover:bg-indigo-700 transition-colors disabled:opacity-60"
+                                style={{ fontWeight: 600 }}>
+                                {saving[attKey] ? 'Kaydediliyor...' : `${lessonNo}. Ders Yoklamasını Kaydet`}
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>
