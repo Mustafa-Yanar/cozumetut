@@ -3616,7 +3616,6 @@ function DirectorSettingsModal({ current, onClose, onSave, showToast }) {
       {/* Alt: Ders saatleri */}
       <div>
         <h4 className="text-xs font-700 text-gray-700 uppercase tracking-wide mb-2" style={{ fontWeight: 700 }}>Ders Saatleri</h4>
-        <p className="text-[11px] text-gray-500 mb-3">12 slot, 5 dakikalık periyotlar (09:00 – 19:20). Her satırın başlangıcı önceki bitişten sonra olmalı.</p>
         {timesLoading ? (
           <div className="text-center py-6 text-gray-400 text-sm">Yükleniyor...</div>
         ) : (
